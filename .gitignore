@@ -1,0 +1,9 @@
+node_modules/
+dist/
+models/
+.venv/
+onmac.toml
+*.log
+.DS_Store
+
+__pycache__/

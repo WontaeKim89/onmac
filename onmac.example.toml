@@ -1,0 +1,61 @@
+#  onmac 설정
+#  이 파일이 없으면 onmac 은 아무 것도 하지 않는다 (기본 거부).
+#  cp onmac.example.toml onmac.toml 후 본인 환경에 맞게 수정.
+
+[llm]
+# "llamacpp" = node-llama-cpp (기본값, 파이썬 불필요)
+# "mlx"      = Apple Silicon 전용, 15~20% 빠름. python/.venv 필요
+backend = "llamacpp"
+maxTurns = 12
+maxKvSize = 32768        # native 262k 를 그대로 열면 KV 캐시가 메모리를 삼킨다
+
+[llm.llamacpp]
+modelPath = "models/Qwen3.8-27B-Q4_K_M.gguf"
+mmprojPath = "models/mmproj-Qwen3.8-27B-F16.gguf"   # 비전용. 없으면 텍스트 전용으로 동작
+
+[llm.mlx]
+modelPath = "models/Qwen3.8-27B-4bit"
+python = ".venv/bin/python"
+
+[roots]
+# 에이전트가 접근할 수 있는 최상위 경로. 여기 없는 곳은 읽지도 못한다.
+allow = [
+  "~/Desktop",
+  "~/Downloads",
+  "~/Documents",
+  "~/ObsidianVaults",
+]
+# deny 는 allow 를 항상 이긴다. allow 루트 안에 있어도 여기 걸리면 차단.
+deny = [
+  "~/.ssh/**",
+  "~/Library/Keychains/**",
+  "~/certs/**",
+  "**/.env",
+  "**/.env.*",
+  "**/*.pem",
+  "**/*.key",
+  "**/id_rsa*",
+  "**/credentials*",
+]
+
+[actions]
+read        = "allow"
+list        = "allow"
+write       = "ask"
+move        = "ask"
+delete      = "ask_always"   # 세션 승인(a)으로도 건너뛸 수 없다
+shell       = "ask"
+app_control = "ask"
+settings    = "ask"
+ui_control  = "deny"         # Accessibility 권한이 필요한 UI 클릭. 기본 비활성
+# network 항목은 존재하지 않는다 — 네트워크 툴 자체가 구현되어 있지 않다
+
+[limits]
+maxFileMb = 200
+maxFilesPerCall = 500
+
+[rollback]
+tier1Journal = true          # 항상 켜짐. 끌 수 없다
+tier2ApfsSnapshot = false    # sudo 필요. 대규모 작업 전 볼륨 스냅샷
+tier2ThresholdFiles = 100
+trashRetentionDays = 30
