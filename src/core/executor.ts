@@ -42,7 +42,13 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv, tx: Transact
       txId: tx.id, action: tool.action, tool: tool.name, args: call.args,
       verdict: "deny", reason: decision.reason,
     });
-    return `거부됨: ${decision.reason}`;
+    // "안 된다"만 돌려주면 모델이 다른 경로를 추측하며 턴을 소진한다.
+    // "어디는 되는지"를 같이 줘야 한 턴에 자기교정한다.
+    return (
+      `거부됨: ${decision.reason}\n` +
+      `접근 가능한 경로: ${env.policy.allowedRootsDisplay.join(", ")}\n` +
+      `이 범위 밖은 어떤 방법으로도 접근할 수 없습니다. 범위 안에서 다시 시도하거나 사용자에게 알리십시오.`
+    );
   }
 
   let verdictForAudit: string = decision.verdict;

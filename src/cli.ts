@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createInterface } from "node:readline/promises";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
@@ -9,6 +8,7 @@ import { TerminalConsent } from "./core/consent.ts";
 import { listTransactions, undo } from "./core/tx.ts";
 import * as audit from "./core/audit.ts";
 import { renderBanner, HELP } from "./ui/banner.ts";
+import { question, closePrompt } from "./ui/prompt.ts";
 import { status } from "./ui/status.ts";
 import { bold, cyan, dim, gray, green, red, yellow } from "./ui/theme.ts";
 
@@ -56,22 +56,11 @@ async function chat(): Promise<void> {
   }
   process.stdout.write("\n");
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  let closed = false;
-  rl.on("close", () => {
-    closed = true;
-  });
-
   try {
     for (;;) {
-      if (closed) break;
       // Ctrl+D 나 파이프 입력의 EOF 는 정상 종료다. 에러로 취급하지 않는다.
-      let raw: string;
-      try {
-        raw = await rl.question(`${cyan("›")} `);
-      } catch {
-        break;
-      }
+      const raw = await question(`${cyan("›")} `);
+      if (raw === null) break;
       const line = raw.trim();
       if (!line) continue;
 
@@ -175,7 +164,7 @@ async function chat(): Promise<void> {
     }
   } finally {
     status.pause();
-    rl.close();
+    closePrompt();
     await agent.close();
   }
 }

@@ -3,6 +3,7 @@ import { writeFile, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { OnmacConfig } from "../core/config.ts";
 import { ANSI, bold, cyan, dim, gray, green, isTTY, red, yellow } from "./theme.ts";
+import { pausePrompt, resumePrompt } from "./prompt.ts";
 
 /**
  * 보안 설정을 켜고 끄는 대화형 화면.
@@ -281,6 +282,8 @@ export async function runSettings(cfg: OnmacConfig): Promise<boolean> {
     lastHeight = text.split("\n").length + 1;
   };
 
+  // 공유 readline 이 깨어 있으면 방향키 입력을 나눠 먹는다. raw 모드 동안 재운다.
+  pausePrompt();
   emitKeypressEvents(process.stdin);
   process.stdin.setRawMode(true);
   process.stdin.resume();
@@ -314,8 +317,8 @@ export async function runSettings(cfg: OnmacConfig): Promise<boolean> {
     const cleanup = () => {
       process.stdin.off("keypress", onKey);
       process.stdin.setRawMode(false);
-      process.stdin.pause();
       process.stdout.write(ANSI.showCursor);
+      resumePrompt();
     };
 
     process.stdin.on("keypress", onKey);

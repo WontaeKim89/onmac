@@ -1,7 +1,7 @@
-import { createInterface } from "node:readline/promises";
 import { homedir } from "node:os";
 import type { Decision, Outcome, ToolSpec } from "../types.ts";
 import { status } from "../ui/status.ts";
+import { question } from "../ui/prompt.ts";
 import { bold, dim, gray, green, red, yellow } from "../ui/theme.ts";
 
 export type Answer = "yes" | "no" | "always";
@@ -72,11 +72,8 @@ export class TerminalConsent implements ConsentUI {
       ? `${green("y")} 실행   ${red("n")} 취소   ${yellow("a")} 이 세션은 계속 허용`
       : `${green("y")} 실행   ${red("n")} 취소`;
     line(opts);
-    process.stdout.write(`${bar} `);
 
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const raw = (await rl.question("")).trim().toLowerCase();
-    rl.close();
+    const raw = ((await question(`${bar} `)) ?? "n").trim().toLowerCase();
 
     if (raw === "y" || raw === "yes") return "yes";
     if (canAlways && (raw === "a" || raw === "always")) return "always";
@@ -106,10 +103,7 @@ export class TerminalConsent implements ConsentUI {
     line(dim(`승인 ${stat.approvals}회 · 거절 ${stat.denials}회 · 되돌림 0회`));
     line(dim("맡겨도 전부 기록되고, 되돌리는 순간 다시 물어보기 시작합니다."));
     line(`${green("y")} 맡길게요   ${yellow("n")} 계속 물어봐 주세요`);
-    process.stdout.write(`${bar} `);
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    const raw = (await rl.question("")).trim().toLowerCase();
-    rl.close();
+    const raw = ((await question(`${bar} `)) ?? "n").trim().toLowerCase();
     return raw === "y" || raw === "yes" ? "promote" : "keepAsking";
   }
 }
