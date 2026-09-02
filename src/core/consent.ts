@@ -2,9 +2,10 @@ import { homedir } from "node:os";
 import type { Decision, Outcome, ToolSpec } from "../types.ts";
 import { status } from "../ui/status.ts";
 import { question } from "../ui/prompt.ts";
+import { selectOption } from "../ui/select.ts";
 import { bold, dim, gray, green, red, yellow } from "../ui/theme.ts";
 
-export type Answer = "yes" | "no" | "always";
+export type Answer = "yes" | "no" | "always" | { kind: "feedback"; text: string };
 
 export interface ConsentRequest {
   tool: ToolSpec;
@@ -68,15 +69,21 @@ export class TerminalConsent implements ConsentUI {
     }
 
     const canAlways = decision.verdict === "ask" && !irreversible;
-    const opts = canAlways
-      ? `${green("y")} 실행   ${red("n")} 취소   ${yellow("a")} 이 세션은 계속 허용`
-      : `${green("y")} 실행   ${red("n")} 취소`;
-    line(opts);
 
-    const raw = ((await question(`${bar} `)) ?? "n").trim().toLowerCase();
-
-    if (raw === "y" || raw === "yes") return "yes";
-    if (canAlways && (raw === "a" || raw === "always")) return "always";
+    const options = [
+      { label: "실행", key: "y" },
+      { label: "취소", key: "n" },
+      ...(canAlways ? [{ label: "이 세션은 계속 허용", key: "a" }] : []),
+    ];
+    const r = await selectOption("", options, {
+      allowOther: true,
+      otherLabel: "다르게 해줘 (직접 입력)…",
+      barColor: irreversible ? red : yellow,
+    });
+    const label = options[r.index]?.key;
+    if (label === "y") return "yes";
+    if (label === "a") return "always";
+    if (r.other !== undefined && r.other !== "") return { kind: "feedback", text: r.other };
     return "no";
   }
 
@@ -102,9 +109,11 @@ export class TerminalConsent implements ConsentUI {
     line(`${bold(`"${tool.description.split(".")[0]}" — 이제 안 물어봐도 될까요?`)}`);
     line(dim(`승인 ${stat.approvals}회 · 거절 ${stat.denials}회 · 되돌림 0회`));
     line(dim("맡겨도 전부 기록되고, 되돌리는 순간 다시 물어보기 시작합니다."));
-    line(`${green("y")} 맡길게요   ${yellow("n")} 계속 물어봐 주세요`);
-    const raw = ((await question(`${bar} `)) ?? "n").trim().toLowerCase();
-    return raw === "y" || raw === "yes" ? "promote" : "keepAsking";
+    const r = await selectOption("", [
+      { label: "맡길게요", key: "y" },
+      { label: "계속 물어봐 주세요", key: "n" },
+    ], { barColor: green });
+    return r.index === 0 ? "promote" : "keepAsking";
   }
 }
 

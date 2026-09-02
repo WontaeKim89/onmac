@@ -105,6 +105,17 @@ export class MlxBackend implements LlmBackend {
     if (r.error) throw new Error(`MLX warmup: ${r.error}`);
   }
 
+  /**
+   * 모델 교체 — 사이드카가 기존 VLM 을 메모리에서 내리고 경로만 바꾼다.
+   * 실제 적재는 warmup 이 한다. 최근에 쓰던 모델이면 OS 페이지 캐시 덕에 훨씬 빠르다.
+   */
+  async setModel(path: string): Promise<void> {
+    await this.ensureStarted();
+    const r = await this.send({ op: "set_model", path });
+    if (r.error) throw new Error(r.error);
+    await this.warmup(); // 새 모델을 지금 올린다 — 첫 질문에서 기다리게 하지 않는다
+  }
+
   /** 회상 인덱스용 임베딩. VLM 적재 없이 e5(241MB)만 올린다. */
   async embed(texts: string[], kind: "query" | "passage"): Promise<number[][]> {
     await this.ensureStarted();

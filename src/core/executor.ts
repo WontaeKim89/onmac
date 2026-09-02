@@ -5,7 +5,7 @@ import type { Transaction } from "./tx.ts";
 import * as audit from "./audit.ts";
 import { status } from "../ui/status.ts";
 import type { TrustLedger } from "./trust.ts";
-import { dim } from "../ui/theme.ts";
+import { dim, green } from "../ui/theme.ts";
 import { homedir } from "node:os";
 
 const shortTarget = (t?: string) => (t ? t.replace(homedir(), "~") : "");
@@ -73,6 +73,15 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv, tx: Transact
         preview: preview(tool, call.args),
         ...(tool.describe ? { outcome: tool.describe(call.args) } : {}),
       });
+      if (typeof answer === "object" && answer.kind === "feedback") {
+        // Claude Code 의 "other" — 거부 + 사용자의 방향 제시를 모델에게 전달
+        await env.trust?.recordDecision(tool.name, "denied");
+        await audit.write({
+          txId: tx.id, action: tool.action, tool: tool.name, args: call.args,
+          verdict: "user_denied", reason: `피드백: ${answer.text.slice(0, 120)}`,
+        });
+        return `사용자가 이 실행을 보류하고 다음을 요청했습니다: "${answer.text}"\n요청에 맞게 계획을 수정하십시오.`;
+      }
       if (answer === "no") {
         await env.trust?.recordDecision(tool.name, "denied");
         await audit.write({
@@ -88,7 +97,15 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv, tx: Transact
 
   try {
     status.phase(`${tool.name} ${dim(shortTarget(target))}`);
+    const t0 = Date.now();
     const result = await tool.run(call.args, { tx, cwd: env.cwd });
+    // 진행 과정을 스피너로 뭉개지 않고, 실행된 툴을 지속 로그로 남긴다 (Claude Code 방식)
+    status.pause();
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    process.stdout.write(
+      `  ${green("⚙")} ${tool.name}${target ? dim("(" + shortTarget(target) + ")") : ""} ${dim(secs + "s")}` +
+        `${verdictForAudit === "auto" ? "  " + dim("위임됨") : ""}\n`,
+    );
     await audit.write({
       txId: tx.id, action: tool.action, tool: tool.name, args: call.args,
       verdict: verdictForAudit, reason: decision.reason, result: result.slice(0, 400),

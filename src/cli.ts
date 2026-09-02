@@ -64,6 +64,11 @@ async function chat(): Promise<void> {
       const line = raw.trim();
       if (!line) continue;
 
+      // 사용자 입력을 형광펜처럼 다시 칠한다 — AI 출력과 한눈에 구분되도록
+      if (process.stdout.isTTY) {
+        process.stdout.write(`\x1b[1A\x1b[2K\x1b[48;5;58m\x1b[38;5;230m\x1b[1m › ${line} \x1b[0m\n`);
+      }
+
       if (line.startsWith("/")) {
         if (line === "/quit" || line === "/exit") break;
         if (line === "/help") {
@@ -85,6 +90,45 @@ async function chat(): Promise<void> {
           process.stdout.write(`  ${bold("차단 패턴")}\n`);
           for (const r of cfg.policy.roots.deny) process.stdout.write(`    ${red("-")} ${r}\n`);
           process.stdout.write(`  ${bold("액션")}  ${dim(JSON.stringify(cfg.policy.actions))}\n\n`);
+          continue;
+        }
+        if (line === "/model") {
+          if (cfg.llm.backend !== "mlx") {
+            process.stdout.write(`  ${dim("모델 전환은 mlx 백엔드에서만 지원됩니다.")}\n\n`);
+            continue;
+          }
+          const { scanModels } = await import("./core/models.ts");
+          const found = await scanModels();
+          if (found.length === 0) {
+            process.stdout.write(`  ${dim("models/ 에 설치된 모델이 없습니다.")}\n\n`);
+            continue;
+          }
+          const { selectOption } = await import("./ui/select.ts");
+          const current = cfg.llm.mlx.modelPath;
+          const r = await selectOption(
+            "",
+            found.map((m: { name: string; path: string; sizeGb: string }) => ({
+              label: `${m.name}  ${m.path === current ? "(현재)" : ""}`,
+              hint: `${m.sizeGb}GB`,
+            })),
+          );
+          const chosen = found[r.index]!;
+          if (chosen.path === current) {
+            process.stdout.write(`  ${dim("이미 사용 중인 모델입니다.")}\n\n`);
+            continue;
+          }
+          const backend = (agent as unknown as { backend?: unknown }).backend;
+          status.start(`${chosen.name} 로 교체 중 (기존 모델 메모리 해제 → 새 모델 적재)`);
+          try {
+            const t0 = Date.now();
+            await (agent.swapModel as (p: string) => Promise<void>).call(agent, chosen.path);
+            status.done(`교체 완료 — ${chosen.name} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+            const { persistMlxModelPath } = await import("./core/models.ts");
+            await persistMlxModelPath(cfg.configPath, chosen.path);
+            process.stdout.write(`  ${dim("onmac.toml 에 저장됨 — 다음 실행부터 이 모델로 시작합니다.")}\n\n`);
+          } catch (e) {
+            status.fail(`교체 실패: ${e instanceof Error ? e.message : String(e)}`);
+          }
           continue;
         }
         if (line === "/settings") {
@@ -234,6 +278,17 @@ async function main(): Promise<void> {
       const { TrustLedger } = await import("./core/trust.ts");
       const demoted = await new TrustLedger(30).demoteForTx(r.txId);
       if (demoted.length) process.stdout.write(dim(`위임 해제: ${demoted.join(", ")} — 다시 물어봅니다\n`));
+      return;
+    }
+
+    case "models": {
+      const { scanModels } = await import("./core/models.ts");
+      const cfg2 = await load();
+      for (const m of await scanModels()) {
+        const cur = m.path === cfg2.llm.mlx.modelPath ? green(" ← 현재") : "";
+        process.stdout.write(`  ${bold(m.name.padEnd(24))} ${dim(m.sizeGb + "GB")}${cur}\n`);
+      }
+      process.stdout.write(dim(`\n  대화 중 /model 로 전환 · 추가 설치: .venv/bin/hf download <mlx-community/…> --local-dir models/<이름>\n`));
       return;
     }
 
@@ -390,6 +445,7 @@ async function main(): Promise<void> {
           `  onmac settings         보안 설정 화면 (방향키 + 스페이스)\n` +
           `  onmac init [--here]    설정 파일 생성\n` +
           `  onmac where            어떤 설정을 쓰는지 확인\n` +
+          `  onmac models           설치된 모델 목록 (대화 중 /model 로 전환)\n` +
           `  onmac index [--images] 회상 인덱스 구축 (허용 경로의 문서·스크린샷)\n` +
           `  onmac recall <질문>     인덱스에서 바로 검색\n` +
           `  onmac trust            신뢰 현황 · --revoke-all 로 전량 회수\n` +

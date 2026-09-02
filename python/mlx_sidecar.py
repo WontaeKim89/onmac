@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tool_parser import parse_tool_calls, strip_noise
 
 _VLM = None  # (model, processor, config)
+_VLM_PATH = sys.argv[1]
 _EMB = None  # (model, tokenizer)
 
 
@@ -32,10 +33,29 @@ def vlm():
         from mlx_vlm import load
         from mlx_vlm.utils import load_config
 
-        path = sys.argv[1]
-        model, processor = load(path)
-        _VLM = (model, processor, load_config(path))
+        model, processor = load(_VLM_PATH)
+        _VLM = (model, processor, load_config(_VLM_PATH))
     return _VLM
+
+
+def set_model(path):
+    """모델 교체. 48GB 에 27B 두 개는 못 올린다 — 반드시 내리고 올린다.
+
+    가중치 파일은 macOS 페이지 캐시에 남아 있으므로, 최근에 쓰던 모델로
+    되돌아오는 교체는 디스크가 아니라 RAM 에서 읽어 훨씬 빠르다.
+    """
+    global _VLM, _VLM_PATH
+    _VLM = None
+    _VLM_PATH = path
+    import gc
+
+    gc.collect()
+    try:
+        import mlx.core as mx
+
+        mx.clear_cache()
+    except Exception:
+        pass
 
 
 def emb():
@@ -169,7 +189,10 @@ def main():
             op = req.get("op")
             if op == "warmup":
                 vlm()
-                out = {"ready": True}
+                out = {"ready": True, "model": _VLM_PATH}
+            elif op == "set_model":
+                set_model(req["path"])
+                out = {"ok": True}
             elif op == "embed":
                 out = op_embed(req)
             elif op == "describe":

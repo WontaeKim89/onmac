@@ -145,6 +145,13 @@ export class Agent {
     await this.backend.warmup();
   }
 
+  /** 실행 중 모델 교체. mlx 백엔드만 지원 — 기존 모델을 내리고 새 모델을 올린다. */
+  async swapModel(path: string): Promise<void> {
+    const b = this.backend as unknown as { setModel?: (p: string) => Promise<void> };
+    if (!b.setModel) throw new Error("이 백엔드는 모델 전환을 지원하지 않습니다.");
+    await b.setModel(path);
+  }
+
   /** 마지막 추론의 실측치. 백엔드가 제공할 때만 값이 있다. */
   get backendStats(): Record<string, unknown> | undefined {
     return (this.backend as unknown as { lastStats?: Record<string, unknown> }).lastStats;
