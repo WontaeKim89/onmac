@@ -4,12 +4,24 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { LlmBackend, ToolCallHandler } from "./backend.ts";
 import type { Message, ToolSpec } from "../types.ts";
+import { status } from "../ui/status.ts";
+import { dim } from "../ui/theme.ts";
+
+interface SidecarStats {
+  wall_s?: number;
+  prompt_tokens?: number;
+  gen_tokens?: number;
+  cached_tokens?: number;
+  gen_tps?: number;
+}
 
 interface SidecarReply {
   content?: string;
   tool_calls?: Array<{ name: string; args: Record<string, unknown> }>;
+  stats?: SidecarStats;
   error?: string;
   ready?: boolean;
+  apc?: boolean;
 }
 
 /**
@@ -18,14 +30,25 @@ interface SidecarReply {
  * 프로세스를 나누는 이유는 MLX 가 파이썬 전용이기 때문이기도 하지만,
  * 모델 추론이 파일시스템 권한을 전혀 갖지 않는 별도 프로세스에 갇힌다는 부수 효과도 있다.
  */
+export interface MlxOptions {
+  modelPath: string;
+  python: string;
+  projectRoot: string;
+  maxTurns: number;
+  thinking: boolean;
+  maxKvSize: number;
+}
+
 export class MlxBackend implements LlmBackend {
   readonly name = "mlx";
   private proc?: ChildProcessWithoutNullStreams;
   private rl?: Interface;
   private queue: Array<(r: SidecarReply) => void> = [];
-  private readonly opts: { modelPath: string; python: string; projectRoot: string; maxTurns: number };
+  private readonly opts: MlxOptions;
+  /** 마지막 호출의 실측치. /stats 로 보여준다. */
+  lastStats?: SidecarStats;
 
-  constructor(opts: { modelPath: string; python: string; projectRoot: string; maxTurns: number }) {
+  constructor(opts: MlxOptions) {
     this.opts = opts;
   }
 
@@ -46,6 +69,16 @@ export class MlxBackend implements LlmBackend {
       if (resolve) resolve(JSON.parse(line) as SidecarReply);
     });
 
+    // 사이드카가 죽으면 대기 중인 요청은 영원히 응답을 못 받는다.
+    // 그 상태로 두면 프로세스가 아무 말 없이 멈춘 것처럼 보이므로 즉시 에러로 깨운다.
+    const die = (why: string) => {
+      this.proc = undefined as never;
+      const pending = this.queue.splice(0);
+      for (const r of pending) r({ error: why });
+    };
+    this.proc.on("exit", (code) => die(`사이드카가 종료되었습니다 (exit ${code}). 위 [mlx] 로그를 확인하십시오.`));
+    this.proc.on("error", (e) => die(`사이드카 실행 실패: ${e.message}`));
+
     const ready = await this.send({ ping: true }, /* skipWrite */ true);
     if (!ready.ready) throw new Error(`MLX 사이드카 기동 실패: ${ready.error ?? "unknown"}`);
   }
@@ -55,6 +88,10 @@ export class MlxBackend implements LlmBackend {
       this.queue.push(resolve);
       if (!skipWrite) this.proc!.stdin.write(JSON.stringify(payload) + "\n");
     });
+  }
+
+  async warmup(): Promise<void> {
+    await this.ensureStarted();
   }
 
   async complete(
@@ -76,12 +113,16 @@ export class MlxBackend implements LlmBackend {
     const images = history.flatMap((m) => m.images ?? []);
 
     for (let turn = 0; turn < this.opts.maxTurns; turn++) {
+      status.phase(turn === 0 ? "생각하는 중" : `생각하는 중 ${dim(`(${turn + 1}번째 단계)`)}`);
       const reply = await this.send({
         messages: msgs,
         tools: toolSchemas,
         images: turn === 0 ? images : [],
         max_tokens: 2048,
+        thinking: this.opts.thinking,
+        max_kv_size: this.opts.maxKvSize,
       });
+      if (reply.stats) this.lastStats = reply.stats;
       if (reply.error) throw new Error(`MLX: ${reply.error}`);
 
       const calls = reply.tool_calls ?? [];

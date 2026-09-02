@@ -1,5 +1,8 @@
 import { createInterface } from "node:readline/promises";
+import { homedir } from "node:os";
 import type { Decision, ToolSpec } from "../types.ts";
+import { status } from "../ui/status.ts";
+import { bold, dim, gray, green, red, yellow } from "../ui/theme.ts";
 
 export type Answer = "yes" | "no" | "always";
 
@@ -14,13 +17,16 @@ export interface ConsentUI {
   warn(msg: string): void;
 }
 
-const RESET = "\x1b[0m";
-const DIM = "\x1b[2m";
-const BOLD = "\x1b[1m";
-const YELLOW = "\x1b[33m";
-const RED = "\x1b[31m";
+const short = (s: string) => s.replace(homedir(), "~");
 
-/** 터미널 승인 UI. 개발자용이라 장식 없이 정보 밀도만 챙긴다. */
+const RISK: Record<string, string> = {
+  R0: gray("무해"),
+  R1: green("되돌릴 수 있음"),
+  R2: green("되돌릴 수 있음"),
+  R3: red("되돌릴 수 없음"),
+};
+
+/** 터미널 승인 UI. 장식보다 "무엇이 바뀌는가"의 가독성을 우선한다. */
 export class TerminalConsent implements ConsentUI {
   async ask(req: {
     tool: ToolSpec;
@@ -31,21 +37,29 @@ export class TerminalConsent implements ConsentUI {
     const { tool, decision, preview } = req;
     const irreversible = tool.reversibility === "R3";
 
-    process.stdout.write(
-      `\n${BOLD}┌─ 승인 요청 ─ ${tool.name}${RESET} ${DIM}[${tool.action} / ${tool.reversibility}]${RESET}\n`,
-    );
-    for (const line of preview.split("\n")) process.stdout.write(`${BOLD}│${RESET} ${line}\n`);
-    process.stdout.write(`${BOLD}│${RESET} ${DIM}${decision.reason}${RESET}\n`);
-    if (irreversible) {
-      process.stdout.write(`${BOLD}│${RESET} ${RED}되돌릴 수 없는 작업입니다 (R3).${RESET}\n`);
-    } else {
-      process.stdout.write(`${BOLD}│${RESET} ${DIM}롤백 가능 · onmac undo${RESET}\n`);
-    }
+    // 진행 표시가 돌고 있으면 프롬프트와 같은 줄에서 충돌한다. 반드시 먼저 멈춘다.
+    status.pause();
 
-    // ask_always 와 R3 는 'a'(세션 전체 허용)를 제공하지 않는다.
+    const bar = irreversible ? red("┃") : yellow("┃");
+    const w = process.stdout.columns ?? 80;
+
+    process.stdout.write("\n");
+    process.stdout.write(
+      `${bar} ${bold("승인 요청")}  ${bold(tool.name)}  ${gray(`${tool.action} · ${RISK[tool.reversibility]}`)}\n`,
+    );
+    process.stdout.write(`${bar} ${dim("─".repeat(Math.min(w - 2, 60)))}\n`);
+    for (const line of preview.split("\n")) {
+      process.stdout.write(`${bar} ${short(line)}\n`);
+    }
+    process.stdout.write(
+      `${bar} ${dim(decision.reason)}${irreversible ? "  " + red("이 작업은 undo 로 되돌릴 수 없습니다") : "  " + dim("onmac undo 로 되돌릴 수 있습니다")}\n`,
+    );
+
     const canAlways = decision.verdict === "ask" && !irreversible;
-    const hint = canAlways ? "[y] 실행  [n] 취소  [a] 이 세션 계속 허용" : "[y] 실행  [n] 취소";
-    process.stdout.write(`${BOLD}└─${RESET} ${hint} > `);
+    const opts = canAlways
+      ? `${green("y")} 실행   ${red("n")} 취소   ${yellow("a")} 이 세션 계속 허용`
+      : `${green("y")} 실행   ${red("n")} 취소`;
+    process.stdout.write(`${bar} ${opts}\n${bar} `);
 
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     const raw = (await rl.question("")).trim().toLowerCase();
@@ -57,11 +71,13 @@ export class TerminalConsent implements ConsentUI {
   }
 
   info(msg: string): void {
-    process.stdout.write(`${DIM}${msg}${RESET}\n`);
+    status.pause();
+    process.stdout.write(`${dim(msg)}\n`);
   }
 
   warn(msg: string): void {
-    process.stdout.write(`${YELLOW}⚠  ${msg}${RESET}\n`);
+    status.pause();
+    process.stdout.write(`${yellow("⚠")}  ${msg}\n`);
   }
 }
 

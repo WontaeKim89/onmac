@@ -13,6 +13,11 @@ export type ToolCallHandler = (name: string, args: Record<string, unknown>) => P
  */
 export interface LlmBackend {
   readonly name: string;
+  /**
+   * 모델을 미리 올린다. CLI 가 시작 직후 호출해 로딩 시간을 첫 질문 뒤가 아니라
+   * 진행 표시가 켜져 있는 시작 단계로 옮긴다.
+   */
+  warmup(): Promise<void>;
   complete(
     systemPrompt: string,
     history: Message[],

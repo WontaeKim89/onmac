@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Message, ToolSpec } from "./types.ts";
-import type { OnmacConfig } from "./core/config.ts";
+import { packageRoot, type OnmacConfig } from "./core/config.ts";
 import { PolicyEngine } from "./core/policy.ts";
 import { Transaction, type InverseHandlers } from "./core/tx.ts";
 import { executeToolCall, type ExecEnv } from "./core/executor.ts";
@@ -27,8 +27,11 @@ export function buildBackend(cfg: OnmacConfig): LlmBackend {
     return new MlxBackend({
       modelPath: cfg.llm.mlx.modelPath,
       python: cfg.llm.mlx.python,
-      projectRoot: cfg.root,
+      // 사이드카 스크립트는 설치된 패키지 안에 있다. 설정 파일이 어디에 있든 무관하다.
+      projectRoot: packageRoot,
       maxTurns: cfg.llm.maxTurns,
+      thinking: cfg.llm.thinking,
+      maxKvSize: cfg.llm.maxKvSize,
     });
   }
   return new LlamaCppBackend({
@@ -94,5 +97,23 @@ export class Agent {
 
   get toolNames(): string[] {
     return this.tools.map((t) => t.name);
+  }
+
+  get toolSpecs(): ToolSpec[] {
+    return this.tools;
+  }
+
+  /** 모델은 그대로 두고 대화 기록만 비운다 — 재로드가 없으므로 즉시 끝난다. */
+  clearHistory(): void {
+    this.history.length = 0;
+  }
+
+  async warmup(): Promise<void> {
+    await this.backend.warmup();
+  }
+
+  /** 마지막 추론의 실측치. 백엔드가 제공할 때만 값이 있다. */
+  get backendStats(): Record<string, unknown> | undefined {
+    return (this.backend as unknown as { lastStats?: Record<string, unknown> }).lastStats;
   }
 }

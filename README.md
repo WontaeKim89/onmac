@@ -187,6 +187,59 @@ backend = "mlx"   # one line, that's the whole switch
 Tested with **Qwen3.8-27B** (text + vision, Apache 2.0). Any GGUF or MLX chat model with tool
 calling should work.
 
+## Configure
+
+```bash
+onmac settings     # arrow keys to move, space to toggle, enter to save
+```
+
+An interactive list of every security decision, grouped by what it protects, what it opens, and
+what it asks about. Defaults are the safe ones. Some rows can't be unchecked — delete always
+prompts, UI scripting stays off, and network isn't a setting because there's no network code to
+enable. A row you can see but can't turn off reads differently from a row that isn't there, and
+that difference is the point.
+
+Saving writes the config and keeps the previous version as `.bak`. A policy file should be
+revertible too.
+
+## Speed
+
+Measured on an M4 Pro, Qwen3.8-27B 4-bit:
+
+| | wall | prompt tokens | prefill | generation |
+|---|---|---|---|---|
+| greeting, thinking on, 11 tools | 12.0 s | 889 | 110 tok/s | 15.2 tok/s |
+| greeting, thinking off, 11 tools | 8.3 s | 853 | 122 tok/s | 15.9 tok/s |
+| greeting, thinking off, **0 tools** | **1.2 s** | **55** | 91 tok/s | 16.9 tok/s |
+
+The model isn't the bottleneck — **re-reading the same prompt is.** Eleven tool schemas cost about
+800 tokens, and at ~120 tok/s that's seven seconds spent every turn recomputing an identical
+prefix. Actual answers are 20–50 tokens.
+
+With the prompt cache on, the same three-turn conversation measures:
+
+| turn | wall | prompt tokens | cached | generated |
+|---|---|---|---|---|
+| 1 | 12.5 s | 1104 | 0 | 15 |
+| 2 | **1.7 s** | 1107 | **1088** | 20 |
+| 3 | 8.0 s | 1108 | 1088 | 114 |
+
+Turn 2 is 7× faster than turn 1 for the same work. Turn 3 is slower only because the answer was
+longer — 114 tokens at 15 tok/s. Once the prefix is cached, wall time is just generation.
+
+So the levers, in order of effect:
+
+1. **Prompt cache** — the system prompt and tool block are byte-identical each turn. Reusing them
+   removes the seven seconds rather than making it faster. Enabled by default on the MLX backend.
+2. **`thinking = false`** (default) — 12.0 s → 8.3 s. Choosing a tool doesn't need a monologue.
+3. **Compact tool output** — an early version handed the model a 500-line directory listing and it
+   spent 2048 tokens transcribing it (249 s). Summarizing at the source: 49 s.
+4. **Speculative decoding** — Qwen3.8 ships an MTP draft head (`Qwen3.8-27B-MTP-4bit`, 66 M) that
+   attacks the 15 tok/s generation rate without changing output.
+
+Swapping in a smaller model is the last resort, not the first. It trades quality for a bottleneck
+that isn't where it appears to be.
+
 ## Rollback
 
 Three tiers, cheapest first.

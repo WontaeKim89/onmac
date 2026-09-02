@@ -41,6 +41,10 @@ export class LlamaCppBackend implements LlmBackend {
     return this.lib;
   }
 
+  async warmup(): Promise<void> {
+    await this.ensureStarted();
+  }
+
   async complete(
     systemPrompt: string,
     history: Message[],

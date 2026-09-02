@@ -3,6 +3,11 @@ import type { PolicyEngine } from "./policy.ts";
 import type { ConsentUI } from "./consent.ts";
 import type { Transaction } from "./tx.ts";
 import * as audit from "./audit.ts";
+import { status } from "../ui/status.ts";
+import { dim } from "../ui/theme.ts";
+import { homedir } from "node:os";
+
+const shortTarget = (t?: string) => (t ? t.replace(homedir(), "~") : "");
 
 export interface ExecEnv {
   policy: PolicyEngine;
@@ -52,6 +57,7 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv, tx: Transact
   }
 
   try {
+    status.phase(`${tool.name} ${dim(shortTarget(target))}`);
     const result = await tool.run(call.args, { tx, cwd: env.cwd });
     await audit.write({
       txId: tx.id, action: tool.action, tool: tool.name, args: call.args,

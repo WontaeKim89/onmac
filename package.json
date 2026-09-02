@@ -6,8 +6,9 @@
   "license": "MIT",
   "engines": { "node": ">=22.6" },
   "bin": { "onmac": "./dist/src/cli.js" },
-  "files": ["dist", "python", "onmac.example.toml"],
+  "files": ["dist", "python", "scripts", "onmac.example.toml"],
   "scripts": {
+    "prepare": "npm run build",
     "build": "tsc -p tsconfig.json",
     "dev": "node --experimental-strip-types src/cli.ts",
     "test": "node --experimental-strip-types --test tests/",

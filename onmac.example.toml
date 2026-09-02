@@ -8,6 +8,9 @@
 backend = "llamacpp"
 maxTurns = 12
 maxKvSize = 32768        # native 262k 를 그대로 열면 KV 캐시가 메모리를 삼킨다
+# 사고 과정 토큰. 끄면 응답이 빨라진다 (실측 12.0s → 8.3s).
+# 복잡한 다단계 작업에서만 켜는 것을 권한다.
+thinking = false
 
 [llm.llamacpp]
 modelPath = "models/Qwen3.8-27B-Q4_K_M.gguf"
