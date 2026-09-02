@@ -76,11 +76,21 @@ export const getSystemState: ToolSpec = {
       safe(exec("networksetup", ["-getairportnetwork", "en0"]).then(({ stdout }) => stdout.trim())),
       safe(exec("ipconfig", ["getifaddr", "en0"]).then(({ stdout }) => stdout.trim())),
     ]);
+
+    // macOS 15+ 는 SSID 를 위치 정보로 취급해 위치 권한 없는 CLI 전체에서 가린다.
+    // onmac 의 제한이 아니다 — 모델이 엉뚱한 이유를 지어내지 않도록 사실을 그대로 준다.
+    const wifiLine =
+      wifi.includes("not associated") || wifi.includes("redacted")
+        ? "연결됨(이름은 macOS 개인정보 보호로 CLI 에서 숨겨짐 — onmac 제한 아님. " +
+          "확인 방법: 메뉴 막대 Wi-Fi 아이콘, 또는 단축어 앱에 '네트워크 세부사항 가져오기' " +
+          "단축어를 만들면 onmac 이 대신 실행해 줄 수 있음)"
+        : wifi;
+
     return [
       `다크모드: ${dark}`,
       `볼륨: ${volume}`,
       `디스플레이: ${displays}`,
-      `Wi-Fi: ${wifi}`,
+      `Wi-Fi: ${wifiLine}`,
       `IP 주소(en0): ${ip}`,
     ].join("\n");
   },
