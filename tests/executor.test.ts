@@ -8,6 +8,7 @@ import { executeToolCall, type ExecEnv } from "../src/core/executor.ts";
 import { Transaction } from "../src/core/tx.ts";
 import { AutoDenyConsent } from "../src/core/consent.ts";
 import { fsTools } from "../src/tools/fs.ts";
+import { buildExploreTools } from "../src/tools/explore.ts";
 import type { ConsentUI } from "../src/core/consent.ts";
 
 class AutoYes implements ConsentUI {
@@ -26,10 +27,13 @@ function envFor(root: string, consent: ConsentUI): ExecEnv {
     actions: { read: "allow", list: "allow", write: "ask", move: "ask", delete: "ask_always" },
     limits: { maxFileMb: 200, maxFilesPerCall: 500 },
   };
+  const policy = new PolicyEngine(cfg);
+  // read_file 은 explore 층으로 옮겨졌다 — 게이트 테스트는 두 묶음을 모두 등록한다
+  const all = [...fsTools, ...buildExploreTools(policy)];
   return {
-    policy: new PolicyEngine(cfg),
+    policy,
     consent,
-    tools: new Map(fsTools.map((t) => [t.name, t])),
+    tools: new Map(all.map((t) => [t.name, t])),
     cwd: root,
   };
 }

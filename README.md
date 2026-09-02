@@ -227,6 +227,10 @@ With the prompt cache on, the same three-turn conversation measures:
 Turn 2 is 7× faster than turn 1 for the same work. Turn 3 is slower only because the answer was
 longer — 114 tokens at 15 tok/s. Once the prefix is cached, wall time is just generation.
 
+Generation speed (~15 tok/s on 27B) is the remaining wall, and it does **not** move:
+`kv_bits=8` and `kv_bits=4` both measured 15.1–15.2 tok/s. Quantizing the KV cache saves
+memory, not time, at these context lengths.
+
 So the levers, in order of effect:
 
 1. **Prompt cache** — the system prompt and tool block are byte-identical each turn. Reusing them
@@ -234,11 +238,16 @@ So the levers, in order of effect:
 2. **`thinking = false`** (default) — 12.0 s → 8.3 s. Choosing a tool doesn't need a monologue.
 3. **Compact tool output** — an early version handed the model a 500-line directory listing and it
    spent 2048 tokens transcribing it (249 s). Summarizing at the source: 49 s.
-4. **Speculative decoding** — Qwen3.8 ships an MTP draft head (`Qwen3.8-27B-MTP-4bit`, 66 M) that
-   attacks the 15 tok/s generation rate without changing output.
+4. **Fewer tools** — tool schemas are prompt tokens. Folding six read tools into one `explore`
+   shrinks every request, not just the first.
+5. **Model tiering** — `/model` swaps the loaded model in ~3 s (the old one is unloaded first;
+   the page cache makes coming back fast). Run a 4B/9B for daily work, load the 27B when you
+   need vision or hard reasoning.
 
-Swapping in a smaller model is the last resort, not the first. It trades quality for a bottleneck
-that isn't where it appears to be.
+**Speculative decoding is the only thing that would move generation speed**, and it needs a
+different runtime than `mlx_vlm` — the `mtplx`/`dflash-mlx` packages on PyPI are empty stubs,
+not the real implementations. Treat it as a scoped follow-up: route text-only turns through an
+MTP runtime while vision turns stay on `mlx_vlm`.
 
 ## Rollback
 
@@ -279,6 +288,34 @@ enough to read it — `~/Library/Mail` will return `Operation not permitted` eve
 **UI scripting is off by default on purpose.** Clicking through System Settings windows works
 until the next macOS release moves a button. Where a Shortcut exists, `run_shortcut` is the stable
 path. Opening a settings pane by URL scheme is stable too; clicking inside it is not.
+
+## Tool surface — a paved road and an escape hatch
+
+Modern agents (Claude Code, Codex) hand the model a shell and let it figure things out.
+That works, but it's why they can't offer undo — `rm` through bash is gone.
+
+onmac splits the difference along the axis that actually matters: **can this be reversed?**
+
+| Layer | Tools | Approval | Why here |
+|---|---|---|---|
+| **Explore** | `explore`, `read_file` | none | Reading changes nothing. Run *any* read command; the kernel enforces policy |
+| **Paved road** | `write_file` `move_file` `delete_file` `set_dark_mode` `set_volume` | outcome card | These know *what* changed, so undo is precise and trust can accrue per action type |
+| **Escape hatch** | `apply` | always, per call | Anything else. Reversible (R1) if volume snapshots are on, honestly marked R3 if not |
+| **Memory** | `recall_search` | none | Search over the local index |
+
+`explore` is the interesting one. Instead of whitelisting which commands are allowed —
+a list that is永 incomplete — it runs arbitrary read commands inside a macOS **seatbelt
+sandbox** built from your deny policy. `cat ~/.ssh/id_rsa` fails with
+`Operation not permitted` at the kernel, not because we guessed the command was dangerous.
+
+```
+› 지금 wifi 이름 뭐야?
+  ⚙ explore(networksetup -getairportnetwork en0) 0.1s
+```
+
+One subtlety worth knowing: seatbelt matches **resolved** paths, so `/tmp` rules silently
+miss unless you also emit `/private/tmp`. We learned that the hard way; the profile
+generator now emits both.
 
 ## Project layout
 

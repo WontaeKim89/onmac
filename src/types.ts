@@ -41,7 +41,8 @@ export type Op =
   | { kind: "move"; from: string; to: string }
   | { kind: "delete"; path: string; trash: string }
   | { kind: "appAdd"; app: string; uid: string }
-  | { kind: "settingChange"; key: string; before: string; after: string };
+  | { kind: "settingChange"; key: string; before: string; after: string }
+  | { kind: "volumeSnapshot"; name: string; reason: string };
 
 /**
  * 승인 카드에 띄울 결과-언어 서술.
@@ -66,6 +67,8 @@ export interface ToolSpec {
   targetOf?: (args: Record<string, unknown>) => string | undefined;
   /** 결과-언어 서술. 없으면 승인 카드가 인자 나열로 떨어진다 (전문가용 뷰). */
   describe?: (args: Record<string, unknown>) => Outcome;
+  /** 진행 로그 한 줄에 표시할 요약. 없으면 대상 경로를 쓴다. */
+  label?: (args: Record<string, unknown>) => string;
   run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 }
 

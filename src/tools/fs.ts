@@ -195,4 +195,9 @@ export const deleteFile: ToolSpec = {
   },
 };
 
-export const fsTools = [listDir, readTextFile, writeTextFile, moveFile, deleteFile];
+/**
+ * 쓰기 계열만 남긴다 — 이 셋은 "무엇이 바뀌는지" 를 알기 때문에
+ * 결과-언어 카드·정밀 undo·신뢰 승급이 성립한다.
+ * 조회(list_dir/read_file)는 explore 층으로 옮겼다.
+ */
+export const fsTools = [writeTextFile, moveFile, deleteFile];

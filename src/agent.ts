@@ -11,8 +11,9 @@ import { LlamaCppBackend } from "./llm/llamacpp.ts";
 import { TrustLedger } from "./core/trust.ts";
 import { fsTools } from "./tools/fs.ts";
 import { macosTools, restoreSetting } from "./tools/macos.ts";
-import { shellTools } from "./tools/shell.ts";
 import { buildMemoryTools } from "./tools/memory.ts";
+import { buildExploreTools } from "./tools/explore.ts";
+import { buildApplyTool } from "./tools/apply.ts";
 import type { Embedder } from "./memory/indexer.ts";
 
 function buildSystemPrompt(cfg: OnmacConfig): string {
@@ -25,6 +26,18 @@ function buildSystemPrompt(cfg: OnmacConfig): string {
 - 접근 가능한 경로: ${cfg.policy.roots.allow.join(", ")}
 - 위 범위 밖(예: /tmp, /home)은 존재 여부와 무관하게 접근이 거부됩니다.
 - 사용자가 파일 위치를 지정하지 않으면 현재 작업 디렉토리를 사용하십시오.
+
+작업 방식 — 물어보기 전에 직접 확인하십시오:
+- \`explore\` 로 아무 읽기 명령이나 실행할 수 있습니다. ls, cat, grep, find, wc,
+  sw_vers, pmset, networksetup, system_profiler, defaults read, mdfind, du, ps …
+  전용 도구가 없는 질문은 대부분 여기서 해결됩니다. 승인 없이 즉시 실행됩니다.
+- "그건 확인할 도구가 없습니다" 라고 답하지 마십시오. 먼저 explore 로 시도하고,
+  그래도 안 되면 무엇을 시도했고 왜 실패했는지 사실만 전하십시오.
+- 사용자에게 "실행해 드릴까요?" 라고 되묻지 마십시오. 읽기는 그냥 실행하면 됩니다.
+  승인이 필요한 작업은 시스템이 알아서 확인 카드를 띄웁니다.
+- 파일을 바꿀 때는 write_file/move_file/delete_file 을 쓰십시오 — 정확히 되돌릴 수
+  있습니다. 전용 도구로 안 되는 변경만 \`apply\` 를 쓰십시오.
+- 경로를 추측하지 말고 explore 로 먼저 확인한 뒤 행동하십시오.
 ${BASE_PROMPT}`;
 }
 
@@ -81,10 +94,19 @@ export class Agent {
     this.backend = backend;
     // mlx 백엔드만 임베딩을 제공한다. 없으면 recall 툴이 안내 메시지를 돌려준다.
     const embedder = "embed" in backend ? (backend as unknown as Embedder) : undefined;
-    this.tools = [...fsTools, ...macosTools, ...shellTools, ...buildMemoryTools(embedder)];
+    const policy = new PolicyEngine(cfg.policy);
+    // 툴 수를 줄이는 것 자체가 성능이다 — 스키마가 프롬프트를 먹고, 선택지가 많을수록
+    // 작은 모델의 툴 선택 정확도가 떨어진다. 조회는 explore 하나로 통합했다.
+    this.tools = [
+      ...buildExploreTools(policy),
+      ...fsTools,
+      ...macosTools,
+      buildApplyTool({ snapshotsEnabled: cfg.rollback.tier2ApfsSnapshot }),
+      ...buildMemoryTools(embedder),
+    ];
     this.trust = new TrustLedger(cfg.trust.promoteAfter);
     this.env = {
-      policy: new PolicyEngine(cfg.policy),
+      policy,
       consent,
       tools: new Map(this.tools.map((t) => [t.name, t])),
       cwd: cfg.root,

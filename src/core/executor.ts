@@ -96,14 +96,15 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv, tx: Transact
   }
 
   try {
-    status.phase(`${tool.name} ${dim(shortTarget(target))}`);
+    const label = tool.label?.(call.args) ?? shortTarget(target);
+    status.phase(`${tool.name} ${dim(label)}`);
     const t0 = Date.now();
     const result = await tool.run(call.args, { tx, cwd: env.cwd });
     // 진행 과정을 스피너로 뭉개지 않고, 실행된 툴을 지속 로그로 남긴다 (Claude Code 방식)
     status.pause();
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     process.stdout.write(
-      `  ${green("⚙")} ${tool.name}${target ? dim("(" + shortTarget(target) + ")") : ""} ${dim(secs + "s")}` +
+      `  ${green("⚙")} ${tool.name}${label ? dim("(" + label + ")") : ""} ${dim(secs + "s")}` +
         `${verdictForAudit === "auto" ? "  " + dim("위임됨") : ""}\n`,
     );
     await audit.write({

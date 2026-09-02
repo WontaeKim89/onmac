@@ -204,11 +204,9 @@ export async function restoreSetting(key: string, value: string): Promise<void> 
   }
 }
 
-export const macosTools = [
-  openSettingsPane,
-  getSystemState,
-  setDarkMode,
-  setVolume,
-  listShortcuts,
-  runShortcut,
-];
+/**
+ * macOS 툴은 "되돌릴 방법을 아는 것" 만 남긴다.
+ * 조회(getSystemState·listShortcuts)와 창 열기(openSettingsPane)는 explore 가 흡수했다 —
+ * 툴을 늘리는 대신 모델이 직접 알아내게 하는 쪽이 커버리지가 넓다.
+ */
+export const macosTools = [setDarkMode, setVolume, runShortcut];

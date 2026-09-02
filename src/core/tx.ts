@@ -103,6 +103,15 @@ export async function applyInverse(ops: Op[], inverse: InverseHandlers): Promise
         await inverse.restoreSetting(op.key, op.before);
         log.push(`설정 복원: ${op.key} = ${op.before}`);
         break;
+      case "volumeSnapshot":
+        // 볼륨 전체를 되돌리면 사용자의 다른 작업까지 날아간다.
+        // 스냅샷 위치만 알려주고 실제 복원은 사람이 고르게 한다.
+        log.push(
+          `볼륨 스냅샷 있음: ${op.name}\n` +
+            `  셸 명령(${op.reason})이 바꾼 것은 이 스냅샷에서 꺼내 복원할 수 있습니다:\n` +
+            `  onmac restore --snapshot ${op.name} <파일경로>`,
+        );
+        break;
       default: {
         // Op 에 새 종류를 추가하고 역연산을 빼먹으면 여기서 컴파일이 실패한다.
         const _exhaustive: never = op;

@@ -1,0 +1,51 @@
+[llm]
+backend = "mlx"
+maxTurns = 12
+maxKvSize = 32768
+
+[llm.mlx]
+modelPath = "models/Qwen3.8-27B-4bit"
+python = ".venv/bin/python"
+
+[llm.llamacpp]
+modelPath = "models/Qwen3.8-27B-Q4_K_M.gguf"
+
+[roots]
+allow = [
+  "~/Desktop",
+  "~/Downloads",
+  "~/Documents",
+  "~/ObsidianVaults",
+]
+deny = [
+  "~/.ssh/**",
+  "~/Library/Keychains/**",
+  "~/certs/**",
+  "**/.env",
+  "**/.env.*",
+  "**/*.pem",
+  "**/*.key",
+  "**/id_rsa*",
+  "**/credentials*",
+]
+
+[actions]
+read        = "allow"
+list        = "allow"
+write       = "ask"
+move        = "ask"
+delete      = "ask_always"
+shell       = "ask"
+app_control = "ask"
+settings    = "ask"
+ui_control  = "deny"
+
+[limits]
+maxFileMb = 200
+maxFilesPerCall = 500
+
+[rollback]
+tier1Journal = true
+tier2ApfsSnapshot = false
+tier2ThresholdFiles = 100
+trashRetentionDays = 30
