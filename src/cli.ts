@@ -141,11 +141,20 @@ async function chat(): Promise<void> {
         continue;
       }
 
-      status.start("생각하는 중");
+      status.start("thinking");
       try {
-        const answer = await agent.ask(line);
+        let streamed = 0;
+        const answer = await agent.ask(line, [], (d) => {
+          if (streamed === 0) {
+            status.pause();
+            process.stdout.write("\n");
+          }
+          streamed += d.length;
+          process.stdout.write(d);
+        });
         status.pause();
-        process.stdout.write(`\n${answer}\n\n`);
+        // 스트리밍으로 이미 화면에 찍혔으면 본문을 다시 출력하지 않는다
+        process.stdout.write(streamed > 0 ? "\n\n" : `\n${answer}\n\n`);
 
         // 실적이 쌓인 유형이 있으면 시스템이 승급을 신청한다. 결정은 사용자가.
         const consentUi = new TerminalConsent();

@@ -50,6 +50,7 @@ export class LlamaCppBackend implements LlmBackend {
     history: Message[],
     tools: ToolSpec[],
     onToolCall: ToolCallHandler,
+    _onDelta?: (text: string) => void, // node-llama-cpp 경로는 아직 비스트리밍
   ): Promise<string> {
     const lib = await this.ensureStarted();
     const { defineChatSessionFunction } = lib;

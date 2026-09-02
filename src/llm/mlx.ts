@@ -44,6 +44,7 @@ export class MlxBackend implements LlmBackend {
   private proc?: ChildProcessWithoutNullStreams;
   private rl?: Interface;
   private queue: Array<(r: SidecarReply) => void> = [];
+  private deltaSink?: (text: string) => void;
   private readonly opts: MlxOptions;
   /** 마지막 호출의 실측치. /stats 로 보여준다. */
   lastStats?: SidecarStats;
@@ -65,8 +66,14 @@ export class MlxBackend implements LlmBackend {
     });
     this.rl = createInterface({ input: this.proc.stdout });
     this.rl.on("line", (line) => {
+      const parsed = JSON.parse(line) as SidecarReply & { delta?: string };
+      // delta 는 진행 중 스트림 조각이다. 큐를 소모하지 않는다.
+      if (parsed.delta !== undefined) {
+        this.deltaSink?.(parsed.delta);
+        return;
+      }
       const resolve = this.queue.shift();
-      if (resolve) resolve(JSON.parse(line) as SidecarReply);
+      if (resolve) resolve(parsed);
     });
 
     // 사이드카가 죽으면 대기 중인 요청은 영원히 응답을 못 받는다.
@@ -99,6 +106,7 @@ export class MlxBackend implements LlmBackend {
     history: Message[],
     tools: ToolSpec[],
     onToolCall: ToolCallHandler,
+    onDelta?: (text: string) => void,
   ): Promise<string> {
     await this.ensureStarted();
 
@@ -113,7 +121,31 @@ export class MlxBackend implements LlmBackend {
     const images = history.flatMap((m) => m.images ?? []);
 
     for (let turn = 0; turn < this.opts.maxTurns; turn++) {
-      status.phase(turn === 0 ? "생각하는 중" : `생각하는 중 ${dim(`(${turn + 1}번째 단계)`)}`);
+      status.phase(turn === 0 ? "thinking" : `thinking ${dim(`(step ${turn + 1})`)}`);
+
+      // 홀드백 스트리밍: 토큰을 나오는 대로 흘리되, 마지막 16자는 붙잡아 둔다.
+      // <tool_call> / <think> 마크업이 조각나서 화면에 새는 것을 막기 위해서다.
+      const HOLD = 16;
+      let buf = "";
+      let suppressed = false;
+      this.deltaSink = onDelta
+        ? (d) => {
+            if (suppressed) return;
+            buf += d;
+            const m = buf.search(/<tool_call|<think|<\/think/);
+            if (m >= 0) {
+              if (m > 0) onDelta(buf.slice(0, m));
+              suppressed = true;
+              buf = "";
+              return;
+            }
+            if (buf.length > HOLD) {
+              onDelta(buf.slice(0, buf.length - HOLD));
+              buf = buf.slice(-HOLD);
+            }
+          }
+        : undefined as never;
+
       const reply = await this.send({
         messages: msgs,
         tools: toolSchemas,
@@ -121,12 +153,18 @@ export class MlxBackend implements LlmBackend {
         max_tokens: 2048,
         thinking: this.opts.thinking,
         max_kv_size: this.opts.maxKvSize,
+        stream: onDelta !== undefined,
       });
+      this.deltaSink = undefined as never;
       if (reply.stats) this.lastStats = reply.stats;
       if (reply.error) throw new Error(`MLX: ${reply.error}`);
 
       const calls = reply.tool_calls ?? [];
-      if (calls.length === 0) return reply.content ?? "";
+      if (calls.length === 0) {
+        // 홀드백에 남은 꼬리를 마저 흘린다
+        if (onDelta && !suppressed && buf) onDelta(buf);
+        return reply.content ?? "";
+      }
 
       // 채팅 템플릿이 기대하는 형태로 되돌려 넣는다.
       // arguments 는 반드시 객체다 — Qwen 템플릿이 .items() 를 호출하므로

@@ -23,6 +23,8 @@ export interface LlmBackend {
     history: Message[],
     tools: ToolSpec[],
     onToolCall: ToolCallHandler,
+    /** 토큰 스트리밍 콜백. 지원 안 하는 백엔드는 무시해도 된다. */
+    onDelta?: (text: string) => void,
   ): Promise<string>;
   close(): Promise<void>;
 }

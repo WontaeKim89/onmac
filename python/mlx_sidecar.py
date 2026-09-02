@@ -17,7 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from mlx_vlm import load, generate
+from mlx_vlm import load, generate, stream_generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load_config
 
@@ -94,8 +94,24 @@ def main():
                 kwargs["apc_tenant"] = "onmac"
 
             t0 = time.time()
-            result = generate(model, processor, prompt, image=images or None, verbose=False, **kwargs)
-            text = result if isinstance(result, str) else getattr(result, "text", str(result))
+            if req.get("stream"):
+                # 토큰이 나오는 대로 delta 로 흘린다. 15 tok/s 생성 속도에서
+                # 완성까지 기다리면 15초지만, 첫 토큰은 1~2초에 나온다.
+                # 툴 호출 마크업 숨김은 TS 쪽 홀드백 버퍼가 담당한다.
+                parts, last = [], None
+                for chunk in stream_generate(
+                    model, processor, prompt, image=images or None, **kwargs
+                ):
+                    piece = getattr(chunk, "text", "")
+                    if piece:
+                        parts.append(piece)
+                        print(json.dumps({"delta": piece}, ensure_ascii=False), flush=True)
+                    last = chunk
+                text = "".join(parts)
+                result = last
+            else:
+                result = generate(model, processor, prompt, image=images or None, verbose=False, **kwargs)
+                text = result if isinstance(result, str) else getattr(result, "text", str(result))
 
             print(
                 json.dumps(

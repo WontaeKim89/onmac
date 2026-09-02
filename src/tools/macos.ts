@@ -55,19 +55,34 @@ export const openSettingsPane: ToolSpec = {
 
 export const getSystemState: ToolSpec = {
   name: "get_system_state",
-  description: "다크모드, 볼륨, 디스플레이 미러링 등 현재 시스템 상태를 조회한다.",
-  action: "settings",
+  description:
+    "다크모드, 볼륨, 디스플레이, Wi-Fi 연결(네트워크 이름·IP) 등 현재 시스템 상태를 조회한다. " +
+    "아무것도 바꾸지 않는 읽기 전용 조회다.",
+  // 읽기 전용 조회를 settings 로 묶으면 "와이파이 뭐야?" 에 승인 카드가 뜬다.
+  // 조회는 조회답게 — 묻지 않는다. 바꾸는 툴들만 settings 로 남는다.
+  action: "read",
   reversibility: "R0",
   parameters: { type: "object", properties: {}, required: [] },
   async run() {
-    const [dark, volume, displays] = await Promise.all([
-      osa('tell application "System Events" to tell appearance preferences to get dark mode'),
-      osa("output volume of (get volume settings)"),
-      exec("system_profiler", ["SPDisplaysDataType"]).then(({ stdout }) =>
-        stdout.split("\n").filter((l) => /Resolution|Mirror|Display Type/.test(l)).map((l) => l.trim()).join(" | "),
+    const safe = (p: Promise<string>) => p.catch(() => "확인 불가");
+    const [dark, volume, displays, wifi, ip] = await Promise.all([
+      safe(osa('tell application "System Events" to tell appearance preferences to get dark mode')),
+      safe(osa("output volume of (get volume settings)")),
+      safe(
+        exec("system_profiler", ["SPDisplaysDataType"]).then(({ stdout }) =>
+          stdout.split("\n").filter((l) => /Resolution|Mirror|Display Type/.test(l)).map((l) => l.trim()).join(" | "),
+        ),
       ),
+      safe(exec("networksetup", ["-getairportnetwork", "en0"]).then(({ stdout }) => stdout.trim())),
+      safe(exec("ipconfig", ["getifaddr", "en0"]).then(({ stdout }) => stdout.trim())),
     ]);
-    return `다크모드: ${dark}\n볼륨: ${volume}\n디스플레이: ${displays}`;
+    return [
+      `다크모드: ${dark}`,
+      `볼륨: ${volume}`,
+      `디스플레이: ${displays}`,
+      `Wi-Fi: ${wifi}`,
+      `IP 주소(en0): ${ip}`,
+    ].join("\n");
   },
 };
 
@@ -126,7 +141,7 @@ export const listShortcuts: ToolSpec = {
   description:
     "사용자가 단축어(Shortcuts) 앱에 만들어둔 자동화 목록을 조회한다. " +
     "UI 를 직접 클릭하는 대신 단축어를 호출하는 편이 훨씬 안정적이다.",
-  action: "app_control",
+  action: "read", // 목록 조회일 뿐이다. 실행(run_shortcut)과 달리 묻지 않는다
   reversibility: "R0",
   parameters: { type: "object", properties: {}, required: [] },
   async run() {
