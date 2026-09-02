@@ -67,18 +67,33 @@ export async function otherConfigPaths(active: string): Promise<string[]> {
   return (await candidateConfigs()).filter((c) => c !== active);
 }
 
-/** 다른 설정 파일들이 가리키는 모델명 — 실행 위치에 따른 혼선을 눈에 보이게 한다. */
+/** 모델이 어긋난 설정 파일들만. /model 이 "전부 맞추기" 를 제안할 대상. */
+export async function divergentConfigPaths(active: string): Promise<string[]> {
+  return (await otherConfigModels(active)).map((o) => o.configPath);
+}
+
+async function modelPathIn(configPath: string): Promise<string | undefined> {
+  try {
+    const text = await readFile(configPath, "utf8");
+    return /^\s*modelPath\s*=\s*"([^"]+)"/m.exec(text.split("[llm.mlx]")[1] ?? "")?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 다른 설정 파일이 **다른** 모델을 가리키는 경우만 돌려준다.
+ * 같은 모델이면 알릴 이유가 없다 — 경고가 늘 떠 있으면 아무도 안 읽는다.
+ */
 export async function otherConfigModels(
   active: string,
 ): Promise<Array<{ configPath: string; modelName: string }>> {
+  const mine = await modelPathIn(active);
   const out: Array<{ configPath: string; modelName: string }> = [];
   for (const c of await otherConfigPaths(active)) {
-    try {
-      const text = await readFile(c, "utf8");
-      const m = /^\s*modelPath\s*=\s*"([^"]+)"/m.exec(text.split("[llm.mlx]")[1] ?? "");
-      if (m) out.push({ configPath: c, modelName: m[1]!.split("/").pop() ?? m[1]! });
-    } catch {
-      continue;
+    const theirs = await modelPathIn(c);
+    if (theirs && theirs !== mine) {
+      out.push({ configPath: c, modelName: theirs.split("/").pop() ?? theirs });
     }
   }
   return out;

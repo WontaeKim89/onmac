@@ -204,6 +204,25 @@ revertible too.
 
 ## Speed
 
+### Pick the right architecture, not just the right size
+
+Measured on an M4 Pro, identical prompt (10 tools, thinking off, prompt cache on):
+
+| Model | Architecture | Load | Generation | Wall (cached turn) |
+|---|---|---|---|---|
+| **Qwen3.6-35B-A3B** | MoE, 256 experts, **8 active** | 5.5 s | **80.9 tok/s** | **1.2 s** |
+| Qwen3.5-9B | dense | 1.9 s | 48.3 tok/s | 2.7 s |
+| Qwen3.8-27B | dense | 3.5 s | 15.2 tok/s | 10.2 s |
+
+A Mixture-of-Experts model routes each token through a small subset of its weights —
+35 B parameters exist, ~3 B do the work per token. That buys **5.3× the generation speed of a
+dense 27 B**, while staying larger overall and keeping a vision encoder. It is the default.
+
+The dense 27 B is still worth keeping for tasks where you want the extra depth; `/model` swaps
+between them in about 3 seconds.
+
+### Where the time actually goes
+
 Measured on an M4 Pro, Qwen3.8-27B 4-bit:
 
 | | wall | prompt tokens | prefill | generation |

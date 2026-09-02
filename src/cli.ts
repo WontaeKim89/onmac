@@ -123,13 +123,13 @@ async function chat(): Promise<void> {
             const t0 = Date.now();
             await (agent.swapModel as (p: string) => Promise<void>).call(agent, chosen.path);
             status.done(`교체 완료 — ${chosen.name} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-            const { persistMlxModelPath, otherConfigPaths } = await import("./core/models.ts");
+            const { persistMlxModelPath, divergentConfigPaths } = await import("./core/models.ts");
             await persistMlxModelPath(cfg.configPath, chosen.path);
             process.stdout.write(`  ${dim(`저장: ${short(cfg.configPath)}`)}\n`);
 
             // 모델 선택은 프로젝트별 취향이 아니라 기계 단위 취향이다.
             // 다른 설정 파일이 있으면 같이 맞출지 물어본다 — 안 그러면 실행 위치마다 딴 모델이 뜬다.
-            const others = await otherConfigPaths(cfg.configPath);
+            const others = await divergentConfigPaths(cfg.configPath);
             if (others.length > 0) {
               const { selectOption: sel2 } = await import("./ui/select.ts");
               process.stdout.write(
