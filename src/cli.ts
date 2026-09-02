@@ -326,6 +326,81 @@ async function main(): Promise<void> {
       return;
     }
 
+    case "watch": {
+      const cfg = await load();
+      if (cfg.llm.backend !== "mlx") {
+        process.stderr.write("감시는 mlx 백엔드에서만 동작합니다.\n");
+        process.exit(1);
+      }
+      const withImages = !rest.includes("--no-images");
+      const { MlxBackend } = await import("./llm/mlx.ts");
+      const { MemoryStore } = await import("./memory/store.ts");
+      const { MemoryWatcher, catchUp } = await import("./memory/watcher.ts");
+      const { PolicyEngine } = await import("./core/policy.ts");
+
+      const backend = new MlxBackend({
+        modelPath: cfg.llm.mlx.modelPath,
+        embedModelPath: cfg.llm.mlx.embedModelPath,
+        python: cfg.llm.mlx.python,
+        projectRoot: packageRoot,
+        maxTurns: 1,
+        thinking: false,
+        maxKvSize: cfg.llm.maxKvSize,
+      });
+      const store = new MemoryStore();
+      const policy = new PolicyEngine(cfg.policy);
+
+      process.stdout.write(
+        `\n  ${bold("onmac watch")} ${dim("— 상주 기억")}\n` +
+          `  ${dim(`감시 ${cfg.policy.roots.allow.length}곳 · 이미지 판독 ${withImages ? "켬" : "끔"} · Ctrl+C 로 종료`)}\n\n`,
+      );
+
+      if (withImages) {
+        status.start("비전 모델 적재 중 (한 번만)");
+        await backend.warmup();
+        status.done("준비 완료 — 이제부터 새 파일을 즉시 기억합니다");
+      }
+
+      const missed = await catchUp(cfg.policy.roots.allow, store);
+      if (missed.length > 0) {
+        process.stdout.write(dim(`  꺼져 있는 동안 바뀐 파일 ${missed.length}건 — onmac index 로 따라잡을 수 있습니다\n\n`));
+      }
+
+      const watcher = new MemoryWatcher({
+        roots: cfg.policy.roots.allow,
+        policy,
+        store,
+        embedder: backend,
+        ...(withImages ? { describer: backend } : {}),
+        images: withImages,
+        onIndexed: (e) => {
+          const icon = e.kind === "image" ? "🖼" : "📄";
+          const t = new Date().toTimeString().slice(0, 8);
+          process.stdout.write(`  ${dim(t)} ${icon} ${bold(short(e.path))}\n      ${dim(e.summary)}\n`);
+          // "전에도 이거 보셨어요" — 사용자가 시키지 않았는데 먼저 아는 순간
+          if (e.echo) {
+            process.stdout.write(
+              `      ${green("↳")} 비슷한 것을 ${bold(e.echo.when)} 에도 보셨습니다: ${dim(short(e.echo.path))}\n`,
+            );
+          }
+        },
+      });
+      watcher.start();
+
+      await new Promise<void>((resolve) => {
+        const bye = () => {
+          watcher.stop();
+          store.close();
+          void backend.close();
+          process.stdout.write(dim("\n  감시를 종료했습니다.\n"));
+          resolve();
+        };
+        process.on("SIGINT", bye);
+        process.on("SIGTERM", bye);
+      });
+      return;
+    }
+
     case "index": {
       const cfg = await load();
       if (cfg.llm.backend !== "mlx") {
@@ -480,6 +555,7 @@ async function main(): Promise<void> {
           `  onmac init [--here]    설정 파일 생성\n` +
           `  onmac where            어떤 설정을 쓰는지 확인\n` +
           `  onmac models           설치된 모델 목록 (대화 중 /model 로 전환)\n` +
+          `  onmac watch            상주 감시 — 새 파일을 생기는 즉시 기억\n` +
           `  onmac index [--images] 회상 인덱스 구축 (허용 경로의 문서·스크린샷)\n` +
           `  onmac recall <질문>     인덱스에서 바로 검색\n` +
           `  onmac trust            신뢰 현황 · --revoke-all 로 전량 회수\n` +
