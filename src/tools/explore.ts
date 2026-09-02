@@ -84,6 +84,42 @@ function buildProfile(policy: PolicyEngine): string {
   return lines.join("\n");
 }
 
+/**
+ * 알려진 거짓말 교정.
+ *
+ * 어떤 CLI 는 "정보를 줄 수 없음" 을 "그런 상태가 아님" 으로 보고한다.
+ * 모델은 그 출력을 믿을 수밖에 없고, 결과적으로 사용자에게 틀린 사실을 말한다.
+ * (실측: Wi-Fi 핫스팟에 정상 연결된 상태인데 networksetup 이
+ *  "not associated with an AirPort network" 를 반환 → 모델이 "연결 안 됨" 이라고 답함)
+ *
+ * 그래서 우리가 아는 함정은 출력에 사실을 덧붙여 모델이 오판하지 않게 한다.
+ */
+async function annotate(command: string, output: string): Promise<string> {
+  if (/networksetup\s+-getairportnetwork|airport\s+-I|ipconfig\s+getsummary/.test(command)) {
+    const hidden = /not associated|<redacted>/i.test(output);
+    if (hidden) {
+      const iface = /-getairportnetwork\s+(\w+)/.exec(command)?.[1] ?? "en0";
+      const [ip, route] = await Promise.all([
+        exec("ipconfig", ["getifaddr", iface]).then(({ stdout }) => stdout.trim()).catch(() => ""),
+        exec("route", ["-n", "get", "default"]).then(({ stdout }) => stdout).catch(() => ""),
+      ]);
+      const routed = new RegExp(`interface:\\s*${iface}`).test(route);
+      if (ip || routed) {
+        return (
+          `${output}\n\n[onmac 주석] 위 출력은 "연결 안 됨" 을 뜻하지 않습니다.\n` +
+          `${iface} 는 실제로 연결되어 있습니다 — IP ${ip || "(확인 실패)"}` +
+          `${routed ? ", 기본 경로가 이 인터페이스를 통과합니다" : ""}.\n` +
+          `macOS 15+ 는 Wi-Fi 이름(SSID)을 위치 정보로 취급해, 위치 권한이 없는 CLI 에는 가립니다.\n` +
+          `연결 여부는 위 IP·경로로 판단하고, 이름은 "가려져 있다" 고 전하십시오.\n` +
+          `이름까지 필요하면: 시스템 설정 > 개인정보 보호 > 위치 서비스에서 터미널 앱을 허용하거나, ` +
+          `단축어 앱의 "네트워크 세부사항 가져오기" 를 run_shortcut 으로 실행하십시오.`
+        );
+      }
+    }
+  }
+  return output;
+}
+
 export function buildExploreTools(policy: PolicyEngine): ToolSpec[] {
   const explore: ToolSpec = {
     name: "explore",
@@ -135,7 +171,7 @@ export function buildExploreTools(policy: PolicyEngine): ToolSpec[] {
         );
         const out = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
         const capped = out.length > OUTPUT_CAP ? out.slice(0, OUTPUT_CAP) + "\n… (출력 일부 생략)" : out;
-        return capped || "(출력 없음)";
+        return (await annotate(command, capped)) || "(출력 없음)";
       } catch (e) {
         const err = e as { stdout?: string; stderr?: string; message?: string };
         const text = [err.stdout, err.stderr, err.message].filter(Boolean).join("\n").trim();
@@ -145,7 +181,7 @@ export function buildExploreTools(policy: PolicyEngine): ToolSpec[] {
             `보호 경로는 어떤 방법으로도 읽을 수 없습니다. 다른 방법을 시도하거나 사용자에게 알리십시오.`
           );
         }
-        return `명령 실패:\n${text.slice(0, 1200)}`;
+        return await annotate(command, `명령 실패:\n${text.slice(0, 1200)}`);
       }
     },
   };
