@@ -49,6 +49,41 @@ export async function scanModels(): Promise<InstalledModel[]> {
  * onmac.toml 의 [llm.mlx] modelPath 를 교체해 선택을 영속화한다.
  * 사용자 파일이므로 통째로 재생성하지 않고 해당 줄만 바꾸고, .bak 을 남긴다.
  */
+/** onmac 이 참조할 수 있는 모든 설정 파일 후보. */
+async function candidateConfigs(): Promise<string[]> {
+  const { USER_CONFIG } = await import("./config.ts");
+  const cands = [
+    USER_CONFIG,
+    join(process.cwd(), "onmac.toml"),
+    join(packageRoot, "onmac.toml"),
+  ];
+  const out: string[] = [];
+  for (const c of cands) if ((await exists(c)) && !out.includes(c)) out.push(c);
+  return out;
+}
+
+/** 지금 쓰는 설정 말고 다른 설정 파일들의 경로. */
+export async function otherConfigPaths(active: string): Promise<string[]> {
+  return (await candidateConfigs()).filter((c) => c !== active);
+}
+
+/** 다른 설정 파일들이 가리키는 모델명 — 실행 위치에 따른 혼선을 눈에 보이게 한다. */
+export async function otherConfigModels(
+  active: string,
+): Promise<Array<{ configPath: string; modelName: string }>> {
+  const out: Array<{ configPath: string; modelName: string }> = [];
+  for (const c of await otherConfigPaths(active)) {
+    try {
+      const text = await readFile(c, "utf8");
+      const m = /^\s*modelPath\s*=\s*"([^"]+)"/m.exec(text.split("[llm.mlx]")[1] ?? "");
+      if (m) out.push({ configPath: c, modelName: m[1]!.split("/").pop() ?? m[1]! });
+    } catch {
+      continue;
+    }
+  }
+  return out;
+}
+
 export async function persistMlxModelPath(configPath: string, newPath: string): Promise<void> {
   const text = await readFile(configPath, "utf8");
   const lines = text.split("\n");

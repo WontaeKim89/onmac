@@ -123,9 +123,34 @@ async function chat(): Promise<void> {
             const t0 = Date.now();
             await (agent.swapModel as (p: string) => Promise<void>).call(agent, chosen.path);
             status.done(`교체 완료 — ${chosen.name} (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-            const { persistMlxModelPath } = await import("./core/models.ts");
+            const { persistMlxModelPath, otherConfigPaths } = await import("./core/models.ts");
             await persistMlxModelPath(cfg.configPath, chosen.path);
-            process.stdout.write(`  ${dim("onmac.toml 에 저장됨 — 다음 실행부터 이 모델로 시작합니다.")}\n\n`);
+            process.stdout.write(`  ${dim(`저장: ${short(cfg.configPath)}`)}\n`);
+
+            // 모델 선택은 프로젝트별 취향이 아니라 기계 단위 취향이다.
+            // 다른 설정 파일이 있으면 같이 맞출지 물어본다 — 안 그러면 실행 위치마다 딴 모델이 뜬다.
+            const others = await otherConfigPaths(cfg.configPath);
+            if (others.length > 0) {
+              const { selectOption: sel2 } = await import("./ui/select.ts");
+              process.stdout.write(
+                `  ${yellow("⚠")}  다른 설정 파일 ${others.length}개가 다른 모델을 가리킵니다.\n`,
+              );
+              const yn = await sel2("", [
+                { label: "전부 이 모델로 맞추기", key: "y" },
+                { label: "이 설정만 바꾸기", key: "n" },
+              ]);
+              if (yn.index === 0) {
+                for (const o of others) {
+                  try {
+                    await persistMlxModelPath(o, chosen.path);
+                    process.stdout.write(`  ${dim(`저장: ${short(o)}`)}\n`);
+                  } catch {
+                    process.stdout.write(`  ${dim(`건너뜀: ${short(o)}`)}\n`);
+                  }
+                }
+              }
+            }
+            process.stdout.write("\n");
           } catch (e) {
             status.fail(`교체 실패: ${e instanceof Error ? e.message : String(e)}`);
           }
@@ -282,13 +307,22 @@ async function main(): Promise<void> {
     }
 
     case "models": {
-      const { scanModels } = await import("./core/models.ts");
+      const { scanModels, otherConfigModels } = await import("./core/models.ts");
       const cfg2 = await load();
+      process.stdout.write(`\n  ${dim("설정")} ${short(cfg2.configPath)}\n\n`);
       for (const m of await scanModels()) {
-        const cur = m.path === cfg2.llm.mlx.modelPath ? green(" ← 현재") : "";
+        const cur = m.path === cfg2.llm.mlx.modelPath ? green(" ← 이 설정의 모델") : "";
         process.stdout.write(`  ${bold(m.name.padEnd(24))} ${dim(m.sizeGb + "GB")}${cur}\n`);
       }
-      process.stdout.write(dim(`\n  대화 중 /model 로 전환 · 추가 설치: .venv/bin/hf download <mlx-community/…> --local-dir models/<이름>\n`));
+      // 설정 파일이 여러 개면 실행 위치에 따라 다른 모델이 뜬다 — 실제로 혼동을 부른 지점이다
+      const others = await otherConfigModels(cfg2.configPath);
+      if (others.length > 0) {
+        process.stdout.write(`\n  ${yellow("⚠")}  다른 설정 파일은 다른 모델을 가리킵니다 — 실행 위치에 따라 바뀝니다:\n`);
+        for (const o of others) {
+          process.stdout.write(`     ${dim(short(o.configPath))} → ${o.modelName}\n`);
+        }
+      }
+      process.stdout.write(dim(`\n  대화 중 /model 로 전환 · 추가 설치: .venv/bin/hf download <mlx-community/…> --local-dir models/<이름>\n\n`));
       return;
     }
 
