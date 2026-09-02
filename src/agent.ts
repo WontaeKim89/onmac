@@ -8,6 +8,7 @@ import type { ConsentUI } from "./core/consent.ts";
 import type { LlmBackend } from "./llm/backend.ts";
 import { MlxBackend } from "./llm/mlx.ts";
 import { LlamaCppBackend } from "./llm/llamacpp.ts";
+import { TrustLedger } from "./core/trust.ts";
 import { fsTools } from "./tools/fs.ts";
 import { macosTools, restoreSetting } from "./tools/macos.ts";
 
@@ -50,13 +51,17 @@ export class Agent {
   private readonly history: Message[] = [];
   private readonly backend: LlmBackend;
 
+  readonly trust: TrustLedger;
+
   constructor(cfg: OnmacConfig, backend: LlmBackend, consent: ConsentUI) {
     this.backend = backend;
+    this.trust = new TrustLedger(cfg.trust.promoteAfter);
     this.env = {
       policy: new PolicyEngine(cfg.policy),
       consent,
       tools: new Map(this.tools.map((t) => [t.name, t])),
       cwd: cfg.root,
+      trust: this.trust,
     };
   }
 

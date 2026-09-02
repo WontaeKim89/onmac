@@ -33,6 +33,12 @@ export const openSettingsPane: ToolSpec = {
   description: `macOS 시스템 설정의 특정 패널을 연다. 사용 가능: ${Object.keys(SETTINGS_PANES).join(", ")}`,
   action: "settings",
   reversibility: "R0", // 창을 여는 것뿐이라 되돌릴 게 없다
+  describe: (a) => ({
+    title: `시스템 설정의 ${String(a["pane"] ?? "")} 화면을 열게요`,
+    changes: "설정 창이 열릴 뿐, 아무 값도 바뀌지 않습니다",
+    loses: "없음",
+    recover: "창을 닫으면 끝입니다",
+  }),
   parameters: {
     type: "object",
     properties: { pane: { type: "string", description: "패널 이름", enum: Object.keys(SETTINGS_PANES) } },
@@ -70,6 +76,12 @@ export const setDarkMode: ToolSpec = {
   description: "다크모드를 켜거나 끈다.",
   action: "settings",
   reversibility: "R2", // 이전 값을 기록해두면 역연산이 자명하다
+  describe: (a) => ({
+    title: `화면을 ${a["enabled"] === true ? "다크" : "라이트"} 모드로 바꿀게요`,
+    changes: "시스템 외관 설정 하나가 바뀝니다",
+    loses: "없음",
+    recover: "이전 값을 기억해 두므로 \"되돌려줘\" 로 원래대로 돌아갑니다",
+  }),
   parameters: {
     type: "object",
     properties: { enabled: { type: "boolean", description: "true=다크모드 켜기" } },
@@ -89,6 +101,12 @@ export const setVolume: ToolSpec = {
   description: "출력 볼륨을 0~100 사이로 설정한다.",
   action: "settings",
   reversibility: "R2",
+  describe: (a) => ({
+    title: `볼륨을 ${Number(a["level"])} 로 맞출게요`,
+    changes: "출력 볼륨 하나가 바뀝니다",
+    loses: "없음",
+    recover: "이전 볼륨을 기억해 두므로 \"되돌려줘\" 로 원래대로 돌아갑니다",
+  }),
   parameters: {
     type: "object",
     properties: { level: { type: "number", description: "0~100" } },
@@ -124,6 +142,12 @@ export const runShortcut: ToolSpec = {
     "되돌릴 수 없는 작업(R3)으로 취급하며 매번 승인을 받는다.",
   action: "app_control",
   reversibility: "R3",
+  describe: (a) => ({
+    title: `단축어 "${String(a["name"] ?? "")}" 을(를) 실행할게요`,
+    changes: "이 단축어가 무슨 일을 하는지 onmac 은 알 수 없습니다",
+    loses: "단축어 내용에 따라 다릅니다 — onmac 이 보장할 수 없습니다",
+    recover: "되돌릴 수 없습니다. 단축어가 한 일은 onmac 의 undo 밖입니다",
+  }),
   parameters: {
     type: "object",
     properties: {

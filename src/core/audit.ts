@@ -62,3 +62,24 @@ export async function read(limit = 50): Promise<AuditEntry[]> {
   const lines = (await readFile(AUDIT_LOG, "utf8")).trim().split("\n");
   return lines.slice(-limit).map((l) => JSON.parse(l) as AuditEntry);
 }
+
+/** 특정 트랜잭션의 레코드 전부. 신뢰 강등(undo → 어떤 툴을 강등하나)이 이걸 원장으로 쓴다. */
+export async function forTx(txId: string): Promise<AuditEntry[]> {
+  if (!(await exists(AUDIT_LOG))) return [];
+  const lines = (await readFile(AUDIT_LOG, "utf8")).trim().split("\n");
+  return lines.map((l) => JSON.parse(l) as AuditEntry).filter((e) => e.txId === txId);
+}
+
+/** 대시보드용 전체 집계. */
+export async function tally(): Promise<{ total: number; blocked: number; errors: number }> {
+  if (!(await exists(AUDIT_LOG))) return { total: 0, blocked: 0, errors: 0 };
+  const lines = (await readFile(AUDIT_LOG, "utf8")).trim().split("\n");
+  let total = 0, blocked = 0, errors = 0;
+  for (const l of lines) {
+    const e = JSON.parse(l) as AuditEntry;
+    total++;
+    if (e.verdict === "deny") blocked++;
+    if (e.verdict === "error") errors++;
+  }
+  return { total, blocked, errors };
+}

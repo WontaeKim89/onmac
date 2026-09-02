@@ -145,7 +145,10 @@ export async function listTransactions(): Promise<TxSummary[]> {
 }
 
 /** `onmac undo [--tx id]`. 지정이 없으면 가장 최근 커밋된 트랜잭션을 되돌린다. */
-export async function undo(txId: string | undefined, inverse: InverseHandlers): Promise<string[]> {
+export async function undo(
+  txId: string | undefined,
+  inverse: InverseHandlers,
+): Promise<{ txId: string; log: string[] }> {
   const target = txId ?? (await listTransactions()).find((t) => t.state === "committed")?.id;
   if (!target) throw new Error("되돌릴 트랜잭션이 없습니다.");
 
@@ -157,5 +160,5 @@ export async function undo(txId: string | undefined, inverse: InverseHandlers): 
   const ops = entries.filter((e) => !String(e["kind"]).startsWith("_")) as unknown as Op[];
   const log = await applyInverse(ops, inverse);
   await appendFile(join(TX_DIR, target, "journal.jsonl"), JSON.stringify({ kind: "_rollback", ts: Date.now() }) + "\n");
-  return log;
+  return { txId: target, log };
 }

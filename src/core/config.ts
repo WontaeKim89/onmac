@@ -25,6 +25,10 @@ export interface OnmacConfig {
     tier2ThresholdFiles: number;
     trashRetentionDays: number;
   };
+  trust: {
+    /** 유형별 승인 이 횟수 도달 + 되돌림 0 이면 승급을 제안한다. */
+    promoteAfter: number;
+  };
   /** 설정 파일이 있는 디렉토리. 상대 경로는 전부 여기 기준으로 풀린다. */
   root: string;
   configPath: string;
@@ -117,6 +121,9 @@ export async function load(cwd = process.cwd()): Promise<OnmacConfig> {
         maxFileMb: Number(raw["limits"]?.maxFileMb ?? 200),
         maxFilesPerCall: Number(raw["limits"]?.maxFilesPerCall ?? 500),
       },
+    },
+    trust: {
+      promoteAfter: Number(raw["trust"]?.promoteAfter ?? 30),
     },
     rollback: {
       tier1Journal: rollback.tier1Journal !== false,

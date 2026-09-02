@@ -4,6 +4,7 @@ import type { ConsentUI } from "./consent.ts";
 import type { Transaction } from "./tx.ts";
 import * as audit from "./audit.ts";
 import { status } from "../ui/status.ts";
+import type { TrustLedger } from "./trust.ts";
 import { dim } from "../ui/theme.ts";
 import { homedir } from "node:os";
 
@@ -14,6 +15,8 @@ export interface ExecEnv {
   consent: ConsentUI;
   tools: Map<string, ToolSpec>;
   cwd: string;
+  /** 신뢰 장부. 없으면 위임 없이 항상 묻는다 (테스트 등). */
+  trust?: TrustLedger;
 }
 
 /**
@@ -42,18 +45,39 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv, tx: Transact
     return `거부됨: ${decision.reason}`;
   }
 
+  let verdictForAudit: string = decision.verdict;
+
   if (decision.verdict === "ask" || decision.verdict === "ask_always") {
-    const answer = await env.consent.ask({
-      tool, args: call.args, decision, preview: preview(tool, call.args),
-    });
-    if (answer === "no") {
-      await audit.write({
-        txId: tx.id, action: tool.action, tool: tool.name, args: call.args,
-        verdict: "user_denied", reason: "사용자 거부",
+    // 신뢰 위임 검사. 불변식을 여기서 재확인한다 —
+    // 장부 파일을 손으로 고쳐도 ask_always(삭제)와 R3 는 자동 실행되지 않는다.
+    const delegated =
+      decision.verdict === "ask" &&
+      tool.reversibility !== "R3" &&
+      env.trust !== undefined &&
+      (await env.trust.isAuto(tool.name));
+
+    if (delegated) {
+      env.consent.info(`⚡ ${tool.name} 위임됨 — 자동 실행 (되돌리기: onmac undo)`);
+      verdictForAudit = "auto";
+    } else {
+      const answer = await env.consent.ask({
+        tool,
+        args: call.args,
+        decision,
+        preview: preview(tool, call.args),
+        ...(tool.describe ? { outcome: tool.describe(call.args) } : {}),
       });
-      return "사용자가 실행을 거부했습니다. 다른 방법을 제안하거나 중단하십시오.";
+      if (answer === "no") {
+        await env.trust?.recordDecision(tool.name, "denied");
+        await audit.write({
+          txId: tx.id, action: tool.action, tool: tool.name, args: call.args,
+          verdict: "user_denied", reason: "사용자 거부",
+        });
+        return "사용자가 실행을 거부했습니다. 다른 방법을 제안하거나 중단하십시오.";
+      }
+      await env.trust?.recordDecision(tool.name, "approved");
+      if (answer === "always") env.policy.grantForSession(tool.action, target);
     }
-    if (answer === "always") env.policy.grantForSession(tool.action, target);
   }
 
   try {
@@ -61,7 +85,7 @@ export async function executeToolCall(call: ToolCall, env: ExecEnv, tx: Transact
     const result = await tool.run(call.args, { tx, cwd: env.cwd });
     await audit.write({
       txId: tx.id, action: tool.action, tool: tool.name, args: call.args,
-      verdict: decision.verdict, reason: decision.reason, result: result.slice(0, 400),
+      verdict: verdictForAudit, reason: decision.reason, result: result.slice(0, 400),
     });
     return wrapUntrusted(tool.name, result);
   } catch (e) {

@@ -43,6 +43,18 @@ export type Op =
   | { kind: "appAdd"; app: string; uid: string }
   | { kind: "settingChange"; key: string; before: string; after: string };
 
+/**
+ * 승인 카드에 띄울 결과-언어 서술.
+ * 사용자가 판단에 필요한 건 툴 이름이 아니라 이 세 줄이다:
+ * 무엇이 바뀌나 / 최악엔 무엇을 잃나 / 잘못되면 어떻게 되돌리나.
+ */
+export interface Outcome {
+  title: string;
+  changes: string;
+  loses: string;
+  recover: string;
+}
+
 export interface ToolSpec {
   name: string;
   description: string;
@@ -52,6 +64,8 @@ export interface ToolSpec {
   reversibility: Reversibility;
   /** 인자에서 정책 검사 대상 경로를 뽑아내는 함수. 경로 개념이 없는 툴은 undefined. */
   targetOf?: (args: Record<string, unknown>) => string | undefined;
+  /** 결과-언어 서술. 없으면 승인 카드가 인자 나열로 떨어진다 (전문가용 뷰). */
+  describe?: (args: Record<string, unknown>) => Outcome;
   run: (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 }
 

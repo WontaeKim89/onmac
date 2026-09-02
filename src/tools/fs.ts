@@ -109,6 +109,12 @@ export const writeTextFile: ToolSpec = {
   action: "write",
   reversibility: "R1",
   targetOf: (a) => a["path"] as string,
+  describe: (a) => ({
+    title: `${basename(String(a["path"] ?? ""))} 파일을 쓸게요`,
+    changes: `${String(a["path"])} 에 ${Buffer.byteLength(String(a["content"] ?? ""))}바이트를 저장합니다`,
+    loses: "없음 — 같은 이름의 파일이 있으면 이전 내용을 보관한 뒤 덮어씁니다",
+    recover: "\"되돌려줘\" 한 마디로 이전 내용이 복원됩니다",
+  }),
   parameters: {
     type: "object",
     properties: {
@@ -138,6 +144,12 @@ export const moveFile: ToolSpec = {
   action: "move",
   reversibility: "R1",
   targetOf: (a) => a["to"] as string,
+  describe: (a) => ({
+    title: `${basename(String(a["from"] ?? ""))} 을(를) 옮길게요`,
+    changes: `${String(a["from"])} → ${String(a["to"])}`,
+    loses: "없음 — 삭제가 아니라 이동입니다",
+    recover: "\"되돌려줘\" 한 마디로 제자리로 돌아옵니다",
+  }),
   parameters: {
     type: "object",
     properties: {
@@ -163,6 +175,12 @@ export const deleteFile: ToolSpec = {
   action: "delete",
   reversibility: "R1",
   targetOf: (a) => a["path"] as string,
+  describe: (a) => ({
+    title: `${basename(String(a["path"] ?? ""))} 을(를) 지울게요`,
+    changes: `${String(a["path"])} 이(가) 화면에서 사라집니다`,
+    loses: "없음 — 진짜 삭제가 아니라 onmac 보관함으로 이동합니다",
+    recover: "\"되돌려줘\" 한 마디로 복구됩니다. 삭제는 위임되지 않고 매번 물어봅니다",
+  }),
   parameters: {
     type: "object",
     properties: { path: { type: "string", description: "삭제할 파일 절대경로" } },

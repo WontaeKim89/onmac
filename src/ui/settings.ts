@@ -164,6 +164,7 @@ function renderToml(cfg: OnmacConfig, groups: Group[]): string {
 backend = "${cfg.llm.backend}"
 maxTurns = ${cfg.llm.maxTurns}
 maxKvSize = ${cfg.llm.maxKvSize}
+thinking = ${cfg.llm.thinking ? "true" : "false"}
 
 [llm.mlx]
 modelPath = "${cfg.llm.mlx.modelPath}"
@@ -189,6 +190,9 @@ app_control = "${actions["app_control"]}"
 settings    = "${actions["settings"]}"
 ui_control  = "deny"         # 잠김 — Accessibility 기반 화면 클릭은 비활성
 # network 항목은 없다. 네트워크 클라이언트가 구현되어 있지 않다.
+
+[trust]
+promoteAfter = ${cfg.trust.promoteAfter}
 
 [limits]
 maxFileMb = ${cfg.policy.limits.maxFileMb}

@@ -53,6 +53,12 @@ settings    = "ask"
 ui_control  = "deny"         # Accessibility 권한이 필요한 UI 클릭. 기본 비활성
 # network 항목은 존재하지 않는다 — 네트워크 툴 자체가 구현되어 있지 않다
 
+[trust]
+# 같은 작업 유형을 이 횟수만큼 승인하고 한 번도 되돌리지 않으면,
+# onmac 이 "이제 안 물어봐도 될까요?" 하고 위임을 제안한다.
+# 삭제와 복구 불가 작업(R3)은 어떤 실적으로도 위임되지 않는다.
+promoteAfter = 30
+
 [limits]
 maxFileMb = 200
 maxFilesPerCall = 500
