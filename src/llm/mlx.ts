@@ -32,6 +32,7 @@ interface SidecarReply {
  */
 export interface MlxOptions {
   modelPath: string;
+  embedModelPath: string;
   python: string;
   projectRoot: string;
   maxTurns: number;
@@ -56,7 +57,7 @@ export class MlxBackend implements LlmBackend {
   private async ensureStarted(): Promise<void> {
     if (this.proc) return;
     const script = join(this.opts.projectRoot, "python", "mlx_sidecar.py");
-    this.proc = spawn(this.opts.python, [script, this.opts.modelPath], {
+    this.proc = spawn(this.opts.python, [script, this.opts.modelPath, this.opts.embedModelPath], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
     });
@@ -99,6 +100,25 @@ export class MlxBackend implements LlmBackend {
 
   async warmup(): Promise<void> {
     await this.ensureStarted();
+    // 사이드카 기동은 즉시 끝난다(지연 적재). VLM 17GB 는 여기서 올린다.
+    const r = await this.send({ op: "warmup" });
+    if (r.error) throw new Error(`MLX warmup: ${r.error}`);
+  }
+
+  /** 회상 인덱스용 임베딩. VLM 적재 없이 e5(241MB)만 올린다. */
+  async embed(texts: string[], kind: "query" | "passage"): Promise<number[][]> {
+    await this.ensureStarted();
+    const r = (await this.send({ op: "embed", texts, kind })) as SidecarReply & { vectors?: number[][] };
+    if (r.error) throw new Error(`MLX embed: ${r.error}`);
+    return r.vectors ?? [];
+  }
+
+  /** 이미지 한 장을 색인용 텍스트로 서술. VLM 적재 필요. */
+  async describeImage(path: string): Promise<string> {
+    await this.ensureStarted();
+    const r = await this.send({ op: "describe", image: path });
+    if (r.error) throw new Error(`MLX describe: ${r.error}`);
+    return r.content ?? "";
   }
 
   async complete(

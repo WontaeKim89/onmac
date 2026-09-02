@@ -12,6 +12,8 @@ import { TrustLedger } from "./core/trust.ts";
 import { fsTools } from "./tools/fs.ts";
 import { macosTools, restoreSetting } from "./tools/macos.ts";
 import { shellTools } from "./tools/shell.ts";
+import { buildMemoryTools } from "./tools/memory.ts";
+import type { Embedder } from "./memory/indexer.ts";
 
 function buildSystemPrompt(cfg: OnmacConfig): string {
   // 모델은 자기가 어디서 실행 중인지 모른다. 안 알려주면 /home 같은 리눅스 경로를
@@ -44,6 +46,7 @@ export function buildBackend(cfg: OnmacConfig): LlmBackend {
   if (cfg.llm.backend === "mlx") {
     return new MlxBackend({
       modelPath: cfg.llm.mlx.modelPath,
+      embedModelPath: cfg.llm.mlx.embedModelPath,
       python: cfg.llm.mlx.python,
       // 사이드카 스크립트는 설치된 패키지 안에 있다. 설정 파일이 어디에 있든 무관하다.
       projectRoot: packageRoot,
@@ -63,7 +66,7 @@ export function buildBackend(cfg: OnmacConfig): LlmBackend {
 export const INVERSE_HANDLERS: InverseHandlers = { restoreSetting };
 
 export class Agent {
-  private readonly tools: ToolSpec[] = [...fsTools, ...macosTools, ...shellTools];
+  private readonly tools: ToolSpec[];
   private readonly env: ExecEnv;
   private readonly history: Message[] = [];
   private readonly backend: LlmBackend;
@@ -74,6 +77,9 @@ export class Agent {
   constructor(cfg: OnmacConfig, backend: LlmBackend, consent: ConsentUI) {
     this.systemPrompt = buildSystemPrompt(cfg);
     this.backend = backend;
+    // mlx 백엔드만 임베딩을 제공한다. 없으면 recall 툴이 안내 메시지를 돌려준다.
+    const embedder = "embed" in backend ? (backend as unknown as Embedder) : undefined;
+    this.tools = [...fsTools, ...macosTools, ...shellTools, ...buildMemoryTools(embedder)];
     this.trust = new TrustLedger(cfg.trust.promoteAfter);
     this.env = {
       policy: new PolicyEngine(cfg.policy),

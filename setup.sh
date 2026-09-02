@@ -24,9 +24,10 @@ if [[ "${1:-}" == "--mlx" ]]; then
   echo "==> MLX 백엔드 (파이썬 사이드카)"
   command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
   uv venv --python 3.12
-  uv pip install "mlx-vlm>=0.6.8" huggingface_hub
+  uv pip install "mlx-vlm>=0.6.8" mlx-embeddings huggingface_hub
   ./.venv/bin/python -c "import mlx.core as mx; assert mx.metal.is_available(); print('Metal OK')"
   hf download mlx-community/Qwen3.8-27B-4bit --local-dir models/Qwen3.8-27B-4bit
+  hf download mlx-community/multilingual-e5-small-mlx --local-dir models/e5-small
 fi
 
 [[ -f onmac.toml ]] || { cp onmac.example.toml onmac.toml; echo "==> onmac.toml 생성됨"; }

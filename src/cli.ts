@@ -59,7 +59,7 @@ async function chat(): Promise<void> {
   try {
     for (;;) {
       // Ctrl+D 나 파이프 입력의 EOF 는 정상 종료다. 에러로 취급하지 않는다.
-      const raw = await question(`${cyan("›")} `);
+      const raw = await question(`${bold(cyan("›"))} `);
       if (raw === null) break;
       const line = raw.trim();
       if (!line) continue;
@@ -136,14 +136,17 @@ async function chat(): Promise<void> {
         const answer = await agent.ask(line, [], (d) => {
           if (streamed === 0) {
             status.pause();
-            process.stdout.write("\n");
+            // 사용자 입력(›)과 AI 응답을 시각적으로 가른다
+            process.stdout.write(`\n${green("⏺")} `);
           }
           streamed += d.length;
-          process.stdout.write(d);
+          process.stdout.write(d.replace(/\n/g, "\n  "));
         });
         status.pause();
         // 스트리밍으로 이미 화면에 찍혔으면 본문을 다시 출력하지 않는다
-        process.stdout.write(streamed > 0 ? "\n\n" : `\n${answer}\n\n`);
+        process.stdout.write(
+          streamed > 0 ? "\n\n" : `\n${green("⏺")} ${answer.replace(/\n/g, "\n  ")}\n\n`,
+        );
 
         // 실적이 쌓인 유형이 있으면 시스템이 승급을 신청한다. 결정은 사용자가.
         const consentUi = new TerminalConsent();
@@ -234,6 +237,92 @@ async function main(): Promise<void> {
       return;
     }
 
+    case "index": {
+      const cfg = await load();
+      if (cfg.llm.backend !== "mlx") {
+        process.stderr.write("색인은 mlx 백엔드에서만 동작합니다.\n");
+        process.exit(1);
+      }
+      const withImages = rest.includes("--images");
+      const { MlxBackend } = await import("./llm/mlx.ts");
+      const { MemoryStore } = await import("./memory/store.ts");
+      const { indexRoots } = await import("./memory/indexer.ts");
+      const { PolicyEngine } = await import("./core/policy.ts");
+
+      const backend = new MlxBackend({
+        modelPath: cfg.llm.mlx.modelPath,
+        embedModelPath: cfg.llm.mlx.embedModelPath,
+        python: cfg.llm.mlx.python,
+        projectRoot: packageRoot,
+        maxTurns: cfg.llm.maxTurns,
+        thinking: false,
+        maxKvSize: cfg.llm.maxKvSize,
+      });
+      const store = new MemoryStore();
+      const policy = new PolicyEngine(cfg.policy);
+
+      status.start(withImages ? "색인 중 (이미지 포함 — VLM 적재에 시간이 걸립니다)" : "색인 중");
+      let count = 0;
+      try {
+        const prog = await indexRoots(
+          cfg.policy.roots.allow,
+          policy,
+          store,
+          backend,
+          withImages ? backend : undefined,
+          {
+            images: withImages,
+            onFile: (path, what) => {
+              if (what !== "skip") status.update(`${what === "describe" ? "이미지 판독" : "색인"} ${++count} · ${short(path).slice(-60)}`);
+            },
+          },
+        );
+        const s2 = store.stats();
+        status.done(
+          `색인 완료 — 파일 ${s2.files}개(이미지 ${s2.images}) · 청크 ${s2.chunks} · ` +
+            `신규/갱신 ${prog.indexed} · 정책 제외 ${prog.skippedPolicy} · 판독 실패 ${prog.imageFailures} · 삭제 반영 ${prog.removed}`,
+        );
+        if (!withImages) {
+          process.stdout.write(dim("  스크린샷·이미지까지 색인하려면: onmac index --images\n"));
+        }
+      } finally {
+        store.close();
+        await backend.close();
+      }
+      return;
+    }
+
+    case "recall": {
+      const q = rest.join(" ").trim();
+      if (!q) return void process.stdout.write("사용법: onmac recall <찾을 내용>\n");
+      const cfg = await load();
+      const { MlxBackend } = await import("./llm/mlx.ts");
+      const { MemoryStore } = await import("./memory/store.ts");
+      const backend = new MlxBackend({
+        modelPath: cfg.llm.mlx.modelPath,
+        embedModelPath: cfg.llm.mlx.embedModelPath,
+        python: cfg.llm.mlx.python,
+        projectRoot: packageRoot,
+        maxTurns: 1,
+        thinking: false,
+        maxKvSize: cfg.llm.maxKvSize,
+      });
+      const store = new MemoryStore();
+      try {
+        const [vec] = await backend.embed([q], "query");
+        for (const h of store.search(Float32Array.from(vec!), 8)) {
+          const when = new Date(h.mtimeMs).toISOString().slice(0, 10);
+          process.stdout.write(
+            `${green(h.score.toFixed(3))}  ${dim(when)}  ${h.kind === "image" ? "🖼 " : "📄"} ${short(h.path)}\n  ${dim(h.snippet.replace(/\n/g, " ").slice(0, 110))}\n`,
+          );
+        }
+      } finally {
+        store.close();
+        await backend.close();
+      }
+      return;
+    }
+
     case "trust": {
       const { TrustLedger } = await import("./core/trust.ts");
       const audit2 = await import("./core/audit.ts");
@@ -301,6 +390,8 @@ async function main(): Promise<void> {
           `  onmac settings         보안 설정 화면 (방향키 + 스페이스)\n` +
           `  onmac init [--here]    설정 파일 생성\n` +
           `  onmac where            어떤 설정을 쓰는지 확인\n` +
+          `  onmac index [--images] 회상 인덱스 구축 (허용 경로의 문서·스크린샷)\n` +
+          `  onmac recall <질문>     인덱스에서 바로 검색\n` +
           `  onmac trust            신뢰 현황 · --revoke-all 로 전량 회수\n` +
           `  onmac history          되돌릴 수 있는 변경 이력\n` +
           `  onmac undo [--tx ID]   되돌리기\n` +

@@ -16,7 +16,7 @@ export interface OnmacConfig {
     /** 사고 과정 토큰. 끄면 빨라지고, 어려운 추론에서는 켜는 편이 낫다. */
     thinking: boolean;
     llamacpp: { modelPath: string; mmprojPath?: string };
-    mlx: { modelPath: string; python: string };
+    mlx: { modelPath: string; embedModelPath: string; python: string };
   };
   policy: PolicyConfig;
   rollback: {
@@ -111,6 +111,7 @@ export async function load(cwd = process.cwd()): Promise<OnmacConfig> {
       },
       mlx: {
         modelPath: resolve(dir, llm.mlx?.modelPath ?? join(packageRoot, "models/Qwen3.8-27B-4bit")),
+        embedModelPath: resolve(dir, llm.mlx?.embedModelPath ?? join(packageRoot, "models/e5-small")),
         python: resolve(dir, llm.mlx?.python ?? join(packageRoot, ".venv/bin/python")),
       },
     },
